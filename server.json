@@ -1,0 +1,45 @@
+{
+  "$schema": "https://registry.modelcontextprotocol.io/v0.1/server.schema.json",
+  "name": "io.github.alea-institute/folio",
+  "title": "FOLIO Legal Ontology",
+  "description": "Access FOLIO, the Federated Open Legal Information Ontology. Search, browse, and export 18,000+ legal concepts covering areas of law, document types, legal entities, and more.",
+  "license": "MIT",
+  "homepage": "https://openlegalstandard.org/",
+  "repository": "https://github.com/alea-institute/folio-mcp",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "folio-mcp",
+      "runtime": "python",
+      "runtimeArgs": [],
+      "executionEnvironment": {
+        "uv": {
+          "command": "uvx",
+          "args": ["folio-mcp"]
+        }
+      }
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://folio.openlegalstandard.org/mcp"
+    }
+  ],
+  "tools": [
+    "search_concepts",
+    "search_definitions",
+    "get_concept",
+    "export_concept",
+    "list_branches",
+    "get_taxonomy_branch",
+    "get_children",
+    "get_parents",
+    "get_properties",
+    "find_connections"
+  ],
+  "resources": [
+    "folio://branches",
+    "folio://stats"
+  ]
+}

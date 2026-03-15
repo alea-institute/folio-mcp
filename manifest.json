@@ -1,0 +1,11 @@
+{
+  "name": "FOLIO Legal Ontology",
+  "description": "Access FOLIO, the open legal ontology with 18,000+ concepts. Search, browse, and export legal classifications.",
+  "version": "0.1.0",
+  "server": {
+    "type": "uv",
+    "command": "uvx",
+    "args": ["folio-mcp"]
+  },
+  "user_config": {}
+}

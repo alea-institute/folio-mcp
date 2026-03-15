@@ -1,0 +1,14 @@
+name: folio-mcp
+version: 0.1.0
+description: >
+  MCP server for FOLIO, the Federated Open Legal Information Ontology.
+  Search, browse, and export 18,000+ legal concepts.
+author: ALEA Institute
+license: MIT
+homepage: https://openlegalstandard.org/
+repository: https://github.com/alea-institute/folio-mcp
+transport:
+  stdio:
+    command: uvx
+    args:
+      - folio-mcp

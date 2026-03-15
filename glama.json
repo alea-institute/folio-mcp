@@ -1,0 +1,14 @@
+{
+  "name": "folio-mcp",
+  "title": "FOLIO Legal Ontology",
+  "description": "MCP server for FOLIO, the Federated Open Legal Information Ontology. Search, browse, and export 18,000+ legal concepts covering areas of law, document types, legal entities, and more.",
+  "author": "ALEA Institute",
+  "license": "MIT",
+  "homepage": "https://openlegalstandard.org/",
+  "repository": "https://github.com/alea-institute/folio-mcp",
+  "categories": ["legal", "ontology", "knowledge-base"],
+  "install": {
+    "command": "uvx",
+    "args": ["folio-mcp"]
+  }
+}
