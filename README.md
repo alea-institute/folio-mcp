@@ -6,6 +6,8 @@ MCP server for [FOLIO](https://openlegalstandard.org/), the **F**ederated **O**p
 
 FOLIO is an open-source legal ontology with 18,000+ concepts covering areas of law, document types, legal entities, governmental bodies, and more. This MCP server makes the full ontology available to AI agents as searchable, browsable tools.
 
+A public REST API is already available at **https://folio.openlegalstandard.org/** with interactive Swagger documentation at [/docs](https://folio.openlegalstandard.org/docs). This MCP server wraps the same ontology for native use in AI coding assistants and agent frameworks.
+
 **License:** MIT (server code) / CC-BY 4.0 (ontology data)
 
 ## Installation
@@ -152,6 +154,8 @@ claude mcp add folio-dev -- uv run --directory /path/to/folio-mcp folio-mcp
 ## Links
 
 - [FOLIO Website](https://openlegalstandard.org/)
-- [FOLIO API](https://folio.openlegalstandard.org/)
-- [folio-python](https://github.com/alea-institute/folio-python)
+- [FOLIO REST API](https://folio.openlegalstandard.org/) — public API for direct HTTP access
+- [FOLIO API Docs (Swagger)](https://folio.openlegalstandard.org/docs) — interactive API documentation
+- [folio-python](https://github.com/alea-institute/folio-python) — Python client library
+- [folio-api](https://github.com/alea-institute/folio-api) — REST API server
 - [ALEA Institute](https://aleainstitute.ai/)
