@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-local = ["folio-python[search]>=0.3.1"]
+local = ["folio-python[search]>=0.3.3"]
 
 [project.scripts]
 folio-mcp = "folio_mcp.server:main"
