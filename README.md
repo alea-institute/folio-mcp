@@ -133,7 +133,17 @@ folio-mcp
 | `get_properties()` | Get all OWL object properties (relationships) |
 | `find_connections(subject_iri, property_name, object_iri)` | Find semantic triples |
 
-All responses include full concept data when available: translations (31% of concepts, 10+ languages), preferred labels, external identifiers, alternative labels, examples, cross-references, and more.
+Browse operations return compact summaries (iri, label, definition). Use `get_concept(iri)` for full details including translations (31% of concepts, 10+ languages), preferred labels, external identifiers, and cross-references.
+
+## Prompts (3)
+
+| Prompt | Description | Argument |
+|---|---|---|
+| `classify-document` | Classify a legal document against the FOLIO taxonomy | `description` |
+| `identify-area-of-law` | Identify applicable areas of law for a situation | `situation` |
+| `classify-entity` | Classify a legal entity (person, org, role) | `entity` |
+
+Each prompt guides the LLM through the correct tool workflow and returns structured output (FOLIO label, IRI, definition, confidence, reasoning).
 
 ## Resources (3)
 
@@ -141,7 +151,7 @@ All responses include full concept data when available: translations (31% of con
 |---|---|
 | `folio://branches` | Branch names with concept counts (564 bytes) |
 | `folio://stats` | Ontology statistics — version, class/property counts, license |
-| `folio://branch/{name}` | Top-level concepts in a specific branch (on-demand, 1-288KB) |
+| `folio://branch/{name}` | Top-level concepts in a specific branch (on-demand) |
 
 ## Taxonomy Branches
 
