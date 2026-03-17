@@ -10,6 +10,42 @@ A public REST API is already available at **https://folio.openlegalstandard.org/
 
 **License:** MIT (server code) / CC-BY 4.0 (ontology data)
 
+## Backends
+
+folio-mcp supports two interchangeable backends:
+
+| Mode | Startup | Dependencies | Use case |
+|------|---------|-------------|----------|
+| **API** (default) | Instant | `httpx` only | Normal usage — calls the public FOLIO REST API |
+| **Local** (`--local`) | ~10s | `folio-python[search]` | Offline use or when mounting inside folio-api |
+
+### API mode (default)
+
+The server starts instantly and delegates all queries to the public API at `https://folio.openlegalstandard.org/`. No local ontology loading required.
+
+### Local mode
+
+Loads the full FOLIO ontology in-process (~18k classes). Useful for offline work or when embedded in folio-api.
+
+```bash
+# Install with local dependencies
+pip install folio-mcp[local]
+
+# Run in local mode
+folio-mcp --local
+
+# Or via environment variable
+FOLIO_MCP_LOCAL=1 folio-mcp
+```
+
+### Custom API URL
+
+Point to a different FOLIO API instance:
+
+```bash
+folio-mcp --api-url https://my-folio-instance.example.com
+```
+
 ## Installation
 
 ### Claude Code
@@ -141,7 +177,8 @@ git clone https://github.com/alea-institute/folio-mcp.git
 cd folio-mcp
 uv sync
 
-# Run tests
+# Run tests (requires folio-python for local backend tests)
+uv sync --extra local
 uv run pytest tests/
 
 # Run with MCP Inspector

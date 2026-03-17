@@ -3,75 +3,67 @@ MCP server for FOLIO, the Federated Open Legal Information Ontology.
 
 Provides 10 tools and 2 resources for searching, browsing, and exporting
 concepts from the FOLIO legal ontology (18,000+ concepts, CC-BY 4.0).
+
+Supports two backends:
+- API mode (default): Thin httpx client calling the public FOLIO REST API
+- Local mode (--local): Loads full ontology in-process via folio-python
 """
 
 # imports
+import argparse
 import json
+import os
 from contextlib import asynccontextmanager
 from typing import Optional
 
 # packages
-from folio import FOLIO
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 
 # project imports
-from folio_mcp.helpers import (
-    format_search_results,
-    owl_class_to_dict,
-    owl_property_to_dict,
-    resolve_iri,
-)
+from folio_mcp.backends._branch_data import BRANCH_METHODS, BRANCH_NAMES
+from folio_mcp.backends.protocol import FOLIOBackend
 
-# Module-level FOLIO instance (set during lifespan or externally)
-_folio_instance: Optional[FOLIO] = None
+# Module-level config and backend
+_config = {
+    "local": False,
+    "api_url": "https://folio.openlegalstandard.org",
+}
+_shared_backend: Optional[FOLIOBackend] = None
 
 
-def set_shared_folio(folio_instance: FOLIO) -> None:
+def set_shared_folio(folio_instance) -> None:
     """Set a shared FOLIO instance for use by the MCP server.
 
     Call this before starting the server to share a FOLIO graph
     (e.g., when mounting inside folio-api to avoid double-loading).
     """
-    global _folio_instance
-    _folio_instance = folio_instance
+    global _shared_backend
+    from folio_mcp.backends.local import LocalBackend
+    _shared_backend = LocalBackend(folio_instance)
 
 
 @asynccontextmanager
 async def app_lifespan(server):
-    """Initialize FOLIO once at server startup."""
-    global _folio_instance
-    if _folio_instance is None:
-        _folio_instance = FOLIO()
-    yield {"folio": _folio_instance}
+    """Initialize the backend at server startup."""
+    global _shared_backend
 
+    if _shared_backend is not None:
+        backend = _shared_backend
+    elif _config["local"] or os.environ.get("FOLIO_MCP_LOCAL", "").strip() in ("1", "true", "yes"):
+        from folio_mcp.backends.local import LocalBackend
+        backend = LocalBackend()
+        # Eagerly load the graph
+        _ = backend.folio
+    else:
+        from folio_mcp.backends.api import APIBackend
+        backend = APIBackend(base_url=_config["api_url"])
 
-# Branch dispatch map: user-facing name -> FOLIO method name
-BRANCH_METHODS = {
-    "actors_players": "get_player_actors",
-    "areas_of_law": "get_areas_of_law",
-    "asset_types": "get_asset_types",
-    "communication_modalities": "get_communication_modalities",
-    "currencies": "get_currencies",
-    "data_formats": "get_data_formats",
-    "document_artifacts": "get_document_artifacts",
-    "engagement_terms": "get_engagement_terms",
-    "events": "get_events",
-    "forum_venues": "get_forum_venues",
-    "governmental_bodies": "get_governmental_bodies",
-    "industries": "get_industries",
-    "languages": "get_languages",
-    "folio_types": "get_folio_types",
-    "legal_authorities": "get_legal_authorities",
-    "legal_entities": "get_legal_entities",
-    "locations": "get_locations",
-    "matter_narratives": "get_matter_narratives",
-    "matter_narrative_formats": "get_matter_narrative_formats",
-    "objectives": "get_objectives",
-    "services": "get_services",
-    "standards_compatibilities": "get_standards_compatibilities",
-    "statuses": "get_statuses",
-    "system_identifiers": "get_system_identifiers",
-}
+    try:
+        yield {"backend": backend}
+    finally:
+        if hasattr(backend, "close"):
+            await backend.close()
+
 
 # Create the MCP server
 mcp = FastMCP(
@@ -85,16 +77,16 @@ mcp = FastMCP(
 )
 
 
-def _get_folio(ctx) -> FOLIO:
-    """Extract the FOLIO instance from the MCP context."""
-    return ctx.request_context.lifespan_context["folio"]
+def _get_backend(ctx: Context) -> FOLIOBackend:
+    """Extract the backend from the MCP context."""
+    return ctx.request_context.lifespan_context["backend"]
 
 
 # ── Tools ──────────────────────────────────────────────────────────────
 
 
 @mcp.tool()
-def search_concepts(ctx, query: str, limit: int = 10) -> str:
+async def search_concepts(ctx: Context, query: str, limit: int = 10) -> str:
     """Search FOLIO concepts by label (name).
 
     Finds legal concepts whose names match the query using fuzzy matching.
@@ -107,13 +99,11 @@ def search_concepts(ctx, query: str, limit: int = 10) -> str:
     Returns:
         JSON array of matching concepts with iri, label, definition, and score.
     """
-    folio = _get_folio(ctx)
-    results = folio.search_by_label(query, limit=limit)
-    return format_search_results(results)
+    return await _get_backend(ctx).search_by_label(query, limit)
 
 
 @mcp.tool()
-def search_definitions(ctx, query: str, limit: int = 10) -> str:
+async def search_definitions(ctx: Context, query: str, limit: int = 10) -> str:
     """Search FOLIO concepts by definition text.
 
     Finds legal concepts whose definitions match the query. Use this when
@@ -126,13 +116,11 @@ def search_definitions(ctx, query: str, limit: int = 10) -> str:
     Returns:
         JSON array of matching concepts with iri, label, definition, and score.
     """
-    folio = _get_folio(ctx)
-    results = folio.search_by_definition(query, limit=limit)
-    return format_search_results(results)
+    return await _get_backend(ctx).search_by_definition(query, limit)
 
 
 @mcp.tool()
-def get_concept(ctx, iri: str) -> str:
+async def get_concept(ctx: Context, iri: str) -> str:
     """Get full details for a specific FOLIO concept by IRI.
 
     Accepts short IDs (e.g., "RSYBzf149Mi5KE0YtmpUmr"), full IRIs
@@ -145,17 +133,11 @@ def get_concept(ctx, iri: str) -> str:
     Returns:
         Full JSON representation of the concept, or an error message.
     """
-    folio = _get_folio(ctx)
-    entity, entity_type = resolve_iri(folio, iri)
-    if entity is None:
-        return json.dumps({"error": f"Concept not found: {iri}"})
-    if entity_type == "class":
-        return entity.to_json()
-    return json.dumps(owl_property_to_dict(entity))
+    return await _get_backend(ctx).get_concept(iri)
 
 
 @mcp.tool()
-def export_concept(ctx, iri: str, format: str = "markdown") -> str:
+async def export_concept(ctx: Context, iri: str, format: str = "markdown") -> str:
     """Export a FOLIO concept in a specific format.
 
     Args:
@@ -165,27 +147,11 @@ def export_concept(ctx, iri: str, format: str = "markdown") -> str:
     Returns:
         The concept in the requested format, or an error message.
     """
-    folio = _get_folio(ctx)
-    entity, entity_type = resolve_iri(folio, iri)
-    if entity is None:
-        return json.dumps({"error": f"Concept not found: {iri}"})
-
-    if entity_type == "property":
-        # Properties only support JSON serialization
-        return json.dumps(owl_property_to_dict(entity))
-
-    if format == "markdown":
-        return entity.to_markdown()
-    elif format == "jsonld":
-        return json.dumps(entity.to_jsonld(), indent=2)
-    elif format == "owl_xml":
-        return entity.to_owl_xml()
-    else:
-        return json.dumps({"error": f"Unsupported format: {format}. Use 'markdown', 'jsonld', or 'owl_xml'."})
+    return await _get_backend(ctx).export_concept(iri, format)
 
 
 @mcp.tool()
-def list_branches(ctx) -> str:
+async def list_branches(ctx: Context) -> str:
     """List all FOLIO taxonomy branches with concept counts.
 
     Returns the 24 top-level categories of the FOLIO ontology
@@ -194,17 +160,11 @@ def list_branches(ctx) -> str:
     Returns:
         JSON object mapping branch names to concept counts.
     """
-    folio = _get_folio(ctx)
-    result = {}
-    for branch_name, method_name in BRANCH_METHODS.items():
-        method = getattr(folio, method_name)
-        concepts = method(max_depth=1)
-        result[branch_name] = len(concepts)
-    return json.dumps(result, indent=2)
+    return await _get_backend(ctx).list_branches()
 
 
 @mcp.tool()
-def get_taxonomy_branch(ctx, branch_name: str, max_depth: int = 1) -> str:
+async def get_taxonomy_branch(ctx: Context, branch_name: str, max_depth: int = 1) -> str:
     """Get all concepts in a specific FOLIO taxonomy branch.
 
     Args:
@@ -215,20 +175,11 @@ def get_taxonomy_branch(ctx, branch_name: str, max_depth: int = 1) -> str:
     Returns:
         JSON array of concepts in the branch, or an error message.
     """
-    if branch_name not in BRANCH_METHODS:
-        return json.dumps({
-            "error": f"Unknown branch: {branch_name}",
-            "available_branches": list(BRANCH_METHODS.keys()),
-        })
-
-    folio = _get_folio(ctx)
-    method = getattr(folio, BRANCH_METHODS[branch_name])
-    concepts = method(max_depth=max_depth)
-    return json.dumps([owl_class_to_dict(c) for c in concepts], indent=2)
+    return await _get_backend(ctx).get_taxonomy_branch(branch_name, max_depth)
 
 
 @mcp.tool()
-def get_children(ctx, iri: str, max_depth: int = 1) -> str:
+async def get_children(ctx: Context, iri: str, max_depth: int = 1) -> str:
     """Get child concepts of a given FOLIO concept.
 
     Args:
@@ -238,17 +189,11 @@ def get_children(ctx, iri: str, max_depth: int = 1) -> str:
     Returns:
         JSON array of child concepts, or an error message.
     """
-    folio = _get_folio(ctx)
-    entity, entity_type = resolve_iri(folio, iri)
-    if entity is None:
-        return json.dumps({"error": f"Concept not found: {iri}"})
-
-    children = folio.get_children(entity.iri, max_depth=max_depth)
-    return json.dumps([owl_class_to_dict(c) for c in children], indent=2)
+    return await _get_backend(ctx).get_children(iri, max_depth)
 
 
 @mcp.tool()
-def get_parents(ctx, iri: str, max_depth: int = 1) -> str:
+async def get_parents(ctx: Context, iri: str, max_depth: int = 1) -> str:
     """Get parent concepts of a given FOLIO concept.
 
     Args:
@@ -258,17 +203,11 @@ def get_parents(ctx, iri: str, max_depth: int = 1) -> str:
     Returns:
         JSON array of parent concepts, or an error message.
     """
-    folio = _get_folio(ctx)
-    entity, entity_type = resolve_iri(folio, iri)
-    if entity is None:
-        return json.dumps({"error": f"Concept not found: {iri}"})
-
-    parents = folio.get_parents(entity.iri, max_depth=max_depth)
-    return json.dumps([owl_class_to_dict(c) for c in parents], indent=2)
+    return await _get_backend(ctx).get_parents(iri, max_depth)
 
 
 @mcp.tool()
-def get_properties(ctx) -> str:
+async def get_properties(ctx: Context) -> str:
     """Get all OWL object properties defined in the FOLIO ontology.
 
     Returns properties that describe relationships between concepts
@@ -277,14 +216,12 @@ def get_properties(ctx) -> str:
     Returns:
         JSON array of properties with iri, label, definition, domain, and range.
     """
-    folio = _get_folio(ctx)
-    props = folio.get_all_properties()
-    return json.dumps([owl_property_to_dict(p) for p in props], indent=2)
+    return await _get_backend(ctx).get_properties()
 
 
 @mcp.tool()
-def find_connections(
-    ctx,
+async def find_connections(
+    ctx: Context,
     subject_iri: str,
     property_name: Optional[str] = None,
     object_iri: Optional[str] = None,
@@ -302,54 +239,128 @@ def find_connections(
     Returns:
         JSON array of triples [{subject: {...}, property: {...}, object: {...}}].
     """
-    folio = _get_folio(ctx)
-    entity, entity_type = resolve_iri(folio, subject_iri)
-    if entity is None:
-        return json.dumps({"error": f"Subject not found: {subject_iri}"})
+    return await _get_backend(ctx).find_connections(subject_iri, property_name, object_iri)
 
-    connections = folio.find_connections(
-        subject_class=entity.iri,
-        property_name=property_name,
-        object_class=object_iri,
+
+@mcp.tool()
+async def query_concepts(
+    ctx: Context,
+    label: Optional[str] = None,
+    definition: Optional[str] = None,
+    alt_label: Optional[str] = None,
+    example: Optional[str] = None,
+    any_text: Optional[str] = None,
+    branch: Optional[str] = None,
+    parent_iri: Optional[str] = None,
+    has_children: Optional[bool] = None,
+    deprecated: bool = False,
+    country: Optional[str] = None,
+    match_mode: str = "substring",
+    limit: int = 20,
+) -> str:
+    """Query FOLIO concepts with composable text and structural filters.
+
+    More powerful than search_concepts — supports field-specific matching,
+    structural constraints, and multiple match modes. All specified filters
+    must match (AND logic).
+
+    Text filters:
+        label: Match against the concept's primary label (rdfs:label).
+        definition: Match against the concept's definition (skos:definition).
+        alt_label: Match against alternative labels (skos:altLabel).
+        example: Match against examples (skos:example).
+        any_text: Match against ALL text fields (label, definition, alt_labels, examples, notes, comment).
+
+    Structural filters:
+        branch: Limit to a taxonomy branch (e.g., "AREA_OF_LAW", "CURRENCY", "LEGAL_ENTITY").
+        parent_iri: Only descendants of this IRI (transitive subClassOf).
+        has_children: True = non-leaf concepts only, False = leaf concepts only.
+        deprecated: Include deprecated concepts (default False).
+        country: Match against the country field.
+
+    Control:
+        match_mode: "substring" (default), "exact", "regex", or "fuzzy".
+        limit: Maximum results (default 20).
+
+    Returns:
+        JSON array of matching concepts.
+    """
+    return await _get_backend(ctx).query_concepts(
+        label=label,
+        definition=definition,
+        alt_label=alt_label,
+        example=example,
+        any_text=any_text,
+        branch=branch,
+        parent_iri=parent_iri,
+        has_children=has_children,
+        deprecated=deprecated,
+        country=country,
+        match_mode=match_mode,
+        limit=limit,
     )
 
-    result = []
-    for subj, prop, obj in connections:
-        result.append({
-            "subject": {"iri": subj.iri, "label": subj.label},
-            "property": {"iri": prop.iri, "label": prop.label},
-            "object": {"iri": obj.iri, "label": obj.label},
-        })
-    return json.dumps(result, indent=2)
+
+@mcp.tool()
+async def query_properties(
+    ctx: Context,
+    label: Optional[str] = None,
+    definition: Optional[str] = None,
+    domain_iri: Optional[str] = None,
+    range_iri: Optional[str] = None,
+    has_inverse: Optional[bool] = None,
+    match_mode: str = "substring",
+    limit: int = 20,
+) -> str:
+    """Query FOLIO object properties with composable text and structural filters.
+
+    Replaces get_properties() when you need filtered results instead of the full list.
+
+    Text filters:
+        label: Match against property label (e.g., "jurisdiction", "applies").
+        definition: Match against property definition.
+
+    Structural filters:
+        domain_iri: Only properties whose domain includes this class IRI.
+        range_iri: Only properties whose range includes this class IRI.
+        has_inverse: True = only properties with inverses, False = only without.
+
+    Control:
+        match_mode: "substring" (default), "exact", "regex", or "fuzzy".
+        limit: Maximum results (default 20).
+
+    Returns:
+        JSON array of matching properties with iri, label, definition, domain, range.
+    """
+    return await _get_backend(ctx).query_properties(
+        label=label,
+        definition=definition,
+        domain_iri=domain_iri,
+        range_iri=range_iri,
+        has_inverse=has_inverse,
+        match_mode=match_mode,
+        limit=limit,
+    )
 
 
 # ── Resources ──────────────────────────────────────────────────────────
 
 
 @mcp.resource("folio://branches")
-def branches_resource() -> str:
+async def branches_resource() -> str:
     """FOLIO taxonomy branch names with concept counts."""
-    folio = _folio_instance
-    result = {}
-    for branch_name, method_name in BRANCH_METHODS.items():
-        method = getattr(folio, method_name)
-        concepts = method(max_depth=1)
-        result[branch_name] = len(concepts)
-    return json.dumps(result, indent=2)
+    if _shared_backend is not None:
+        return await _shared_backend.get_branches_resource()
+    # Fallback: resources called outside request context use shared backend
+    return json.dumps({"error": "Backend not available outside request context"})
 
 
 @mcp.resource("folio://stats")
-def stats_resource() -> str:
+async def stats_resource() -> str:
     """FOLIO ontology statistics."""
-    folio = _folio_instance
-    return json.dumps({
-        "version": getattr(folio, "version", None),
-        "title": getattr(folio, "title", None),
-        "num_classes": len(folio.classes),
-        "num_properties": len(folio.object_properties),
-        "source": "https://openlegalstandard.org/",
-        "license": "CC-BY 4.0",
-    }, indent=2)
+    if _shared_backend is not None:
+        return await _shared_backend.get_stats_resource()
+    return json.dumps({"error": "Backend not available outside request context"})
 
 
 # ── Entry point ────────────────────────────────────────────────────────
@@ -357,6 +368,25 @@ def stats_resource() -> str:
 
 def main():
     """Run the FOLIO MCP server with stdio transport."""
+    parser = argparse.ArgumentParser(
+        description="FOLIO Legal Ontology MCP Server",
+    )
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        default=False,
+        help="Use local folio-python backend instead of the public API (requires folio-mcp[local])",
+    )
+    parser.add_argument(
+        "--api-url",
+        default="https://folio.openlegalstandard.org",
+        help="Base URL for the FOLIO API (default: https://folio.openlegalstandard.org)",
+    )
+    args = parser.parse_args()
+
+    _config["local"] = args.local
+    _config["api_url"] = args.api_url
+
     mcp.run(transport="stdio")
 
 
