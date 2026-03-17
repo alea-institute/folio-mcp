@@ -58,9 +58,15 @@ async def app_lifespan(server):
         from folio_mcp.backends.api import APIBackend
         backend = APIBackend(base_url=_config["api_url"])
 
+    # Also store as _shared_backend so static resources (no ctx) can access it.
+    # FastMCP treats resource handlers with any parameter (including ctx) as templates,
+    # so static resources like folio://branches must be zero-arg functions.
+    _shared_backend = backend
+
     try:
         yield {"backend": backend}
     finally:
+        _shared_backend = None
         if hasattr(backend, "close"):
             await backend.close()
 
@@ -347,15 +353,15 @@ async def query_properties(
 
 
 @mcp.resource("folio://branches")
-async def branches_resource(ctx: Context) -> str:
+async def branches_resource() -> str:
     """FOLIO taxonomy branch names with concept counts."""
-    return await _get_backend(ctx).get_branches_resource()
+    return await _shared_backend.get_branches_resource()
 
 
 @mcp.resource("folio://stats")
-async def stats_resource(ctx: Context) -> str:
+async def stats_resource() -> str:
     """FOLIO ontology statistics."""
-    return await _get_backend(ctx).get_stats_resource()
+    return await _shared_backend.get_stats_resource()
 
 
 @mcp.resource(
@@ -363,9 +369,9 @@ async def stats_resource(ctx: Context) -> str:
     description="Top-level concepts in a FOLIO taxonomy branch. "
     "Use folio://branches to see available branch names.",
 )
-async def branch_resource(ctx: Context, branch_name: str) -> str:
+async def branch_resource(branch_name: str) -> str:
     """Get top-level concepts for a specific FOLIO taxonomy branch."""
-    return await _get_backend(ctx).get_taxonomy_branch(branch_name, max_depth=1)
+    return await _shared_backend.get_taxonomy_branch(branch_name, max_depth=1)
 
 
 # ── Entry point ────────────────────────────────────────────────────────
