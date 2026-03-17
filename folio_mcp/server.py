@@ -77,7 +77,16 @@ mcp = FastMCP(
     instructions=(
         "Access FOLIO, the Federated Open Legal Information Ontology. "
         "Search, browse, and export 18,000+ legal concepts covering areas of law, "
-        "document types, legal entities, and more."
+        "document types, legal entities, and more.\n\n"
+        "Workflow: (1) search_concepts to find concepts by name, "
+        "(2) get_concept for full details including translations and identifiers, "
+        "(3) get_children/get_parents to navigate the taxonomy.\n\n"
+        "Browse results return compact summaries (iri, label, definition). "
+        "Use get_concept on a specific IRI to get translations, identifiers, "
+        "cross-references, and all other fields.\n\n"
+        "IMPORTANT: Keep max_depth=1 for browse operations. "
+        "Depth >2 can return very large responses. "
+        "Navigate incrementally with get_children instead."
     ),
     lifespan=app_lifespan,
 )
@@ -171,43 +180,49 @@ async def list_branches(ctx: Context) -> str:
 
 @mcp.tool()
 async def get_taxonomy_branch(ctx: Context, branch_name: str, max_depth: int = 1) -> str:
-    """Get all concepts in a specific FOLIO taxonomy branch.
+    """Get concepts in a FOLIO taxonomy branch. Returns compact summaries.
 
     Args:
         branch_name: Branch name (e.g., "areas_of_law", "document_artifacts").
             Use list_branches() to see all available branch names.
-        max_depth: Maximum depth to traverse (default 1 for direct children only).
+        max_depth: Depth limit. Use 1 (default) for top-level only.
+            WARNING: depth >2 can return very large results.
+            Navigate incrementally with get_children() instead.
 
     Returns:
-        JSON array of concepts in the branch, or an error message.
+        JSON array of {iri, label, definition} summaries.
+        Use get_concept(iri) for full details on a specific concept.
     """
-    return await _get_backend(ctx).get_taxonomy_branch(branch_name, max_depth)
+    return await _get_backend(ctx).get_taxonomy_branch(branch_name, min(max_depth, 3))
 
 
 @mcp.tool()
 async def get_children(ctx: Context, iri: str, max_depth: int = 1) -> str:
-    """Get child concepts of a given FOLIO concept.
+    """Get child concepts of a FOLIO concept. Returns compact summaries.
 
     Args:
         iri: The parent concept IRI or identifier.
-        max_depth: Maximum depth to traverse (default 1).
+        max_depth: Depth limit (default 1 for direct children).
+            Keep at 1-2 to avoid large results.
 
     Returns:
-        JSON array of child concepts, or an error message.
+        JSON array of {iri, label, definition} summaries.
+        Use get_concept(iri) for full details on a specific child.
     """
-    return await _get_backend(ctx).get_children(iri, max_depth)
+    return await _get_backend(ctx).get_children(iri, min(max_depth, 3))
 
 
 @mcp.tool()
 async def get_parents(ctx: Context, iri: str, max_depth: int = 1) -> str:
-    """Get parent concepts of a given FOLIO concept.
+    """Get parent concepts of a FOLIO concept. Returns compact summaries.
 
     Args:
-        iri: The child concept IRI or identifier.
-        max_depth: Maximum depth to traverse (default 1).
+        iri: The concept IRI or identifier.
+        max_depth: Depth limit (default 1 for direct parents).
 
     Returns:
-        JSON array of parent concepts, or an error message.
+        JSON array of {iri, label, definition} summaries.
+        Use get_concept(iri) for full details on a specific parent.
     """
     return await _get_backend(ctx).get_parents(iri, max_depth)
 
