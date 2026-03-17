@@ -420,7 +420,7 @@ wheels = [
 
 [[package]]
 name = "folio-mcp"
-version = "0.2.5"
+version = "0.2.8"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },

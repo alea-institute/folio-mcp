@@ -1,8 +1,9 @@
 """
 MCP server for FOLIO, the Federated Open Legal Information Ontology.
 
-Provides 12 tools and 3 resources for searching, browsing, and exporting
-concepts from the FOLIO legal ontology (18,000+ concepts, CC-BY 4.0).
+Provides 12 tools, 3 resources, and 3 prompt templates for searching,
+browsing, and classifying concepts from the FOLIO legal ontology
+(18,000+ concepts, CC-BY 4.0).
 
 Supports two backends:
 - API mode (default): Thin httpx client calling the public FOLIO REST API
@@ -393,6 +394,93 @@ async def stats_resource() -> str:
 async def branch_resource(branch_name: str) -> str:
     """Get top-level concepts for a specific FOLIO taxonomy branch."""
     return await _shared_backend.get_taxonomy_branch(branch_name, max_depth=1)
+
+
+# ── Prompts ────────────────────────────────────────────────────────────
+
+
+from mcp.server.fastmcp.prompts.base import AssistantMessage, UserMessage
+
+
+@mcp.prompt(
+    name="classify-document",
+    description="Classify a legal document using the FOLIO ontology. "
+    "Provide a document name or description and get the best FOLIO classification.",
+)
+def classify_document(description: str) -> list:
+    """Classify a legal document against the FOLIO document taxonomy."""
+    return [
+        UserMessage(
+            f"Classify this legal document using the FOLIO ontology:\n\n"
+            f'"{description}"\n\n'
+            f"Steps:\n"
+            f"1. Use search_concepts to find matching document types\n"
+            f"2. If no good match, browse the document_artifacts branch with "
+            f"get_taxonomy_branch to see the 8 top-level document categories\n"
+            f"3. Use get_children on the best category to find the specific type\n"
+            f"4. Use get_concept on the best match to get full details\n\n"
+            f"Return the classification as:\n"
+            f"- FOLIO Label\n"
+            f"- FOLIO IRI\n"
+            f"- Definition\n"
+            f"- Parent category\n"
+            f"- Confidence (high/medium/low)\n"
+            f"- Brief reasoning"
+        ),
+    ]
+
+
+@mcp.prompt(
+    name="identify-area-of-law",
+    description="Identify the area(s) of law that apply to a legal situation or matter.",
+)
+def identify_area_of_law(situation: str) -> list:
+    """Identify areas of law for a legal situation."""
+    return [
+        UserMessage(
+            f"Identify the area(s) of law that apply to this situation "
+            f"using the FOLIO ontology:\n\n"
+            f'"{situation}"\n\n'
+            f"Steps:\n"
+            f"1. Use search_concepts to find relevant areas of law\n"
+            f"2. Also browse the areas_of_law branch with get_taxonomy_branch "
+            f"to review all 31 top-level areas\n"
+            f"3. Use get_children on promising areas to check sub-specialties\n"
+            f"4. Use get_concept on each match for full details and translations\n\n"
+            f"Return each applicable area as:\n"
+            f"- FOLIO Label\n"
+            f"- FOLIO IRI\n"
+            f"- Definition\n"
+            f"- Relevance (primary/secondary)\n"
+            f"- Brief reasoning"
+        ),
+    ]
+
+
+@mcp.prompt(
+    name="classify-entity",
+    description="Classify a legal entity (person, organization, role) using FOLIO.",
+)
+def classify_entity(entity: str) -> list:
+    """Classify a legal entity against the FOLIO taxonomy."""
+    return [
+        UserMessage(
+            f"Classify this legal entity using the FOLIO ontology:\n\n"
+            f'"{entity}"\n\n'
+            f"Steps:\n"
+            f"1. Use search_concepts to find matching entity types\n"
+            f"2. Check both the actors_players branch (roles/participants) "
+            f"and legal_entities branch (organization types)\n"
+            f"3. Use get_concept on the best match for full details\n\n"
+            f"Return the classification as:\n"
+            f"- FOLIO Label\n"
+            f"- FOLIO IRI\n"
+            f"- Definition\n"
+            f"- Branch (actors_players or legal_entities)\n"
+            f"- Confidence (high/medium/low)\n"
+            f"- Brief reasoning"
+        ),
+    ]
 
 
 # ── Entry point ────────────────────────────────────────────────────────
