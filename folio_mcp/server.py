@@ -78,15 +78,18 @@ mcp = FastMCP(
         "Access FOLIO, the Federated Open Legal Information Ontology. "
         "Search, browse, and export 18,000+ legal concepts covering areas of law, "
         "document types, legal entities, and more.\n\n"
-        "Workflow: (1) search_concepts to find concepts by name, "
-        "(2) get_concept for full details including translations and identifiers, "
-        "(3) get_children/get_parents to navigate the taxonomy.\n\n"
-        "Browse results return compact summaries (iri, label, definition). "
-        "Use get_concept on a specific IRI to get translations, identifiers, "
-        "cross-references, and all other fields.\n\n"
-        "IMPORTANT: Keep max_depth=1 for browse operations. "
-        "Depth >2 can return very large responses. "
-        "Navigate incrementally with get_children instead."
+        "Workflow:\n"
+        "1. search_concepts(query) — find concepts by name\n"
+        "2. get_taxonomy_branch(branch_name) — browse a branch by name "
+        "(e.g., 'areas_of_law', 'document_artifacts')\n"
+        "3. get_concept(iri) — full details for a specific concept "
+        "(translations, identifiers, cross-references)\n"
+        "4. get_children(iri) / get_parents(iri) — navigate the taxonomy\n\n"
+        "IRIs look like 'https://folio.openlegalstandard.org/R07tQM...' or short IDs like 'R07tQM...'. "
+        "Branch names like 'areas_of_law' are NOT IRIs — use get_taxonomy_branch for those.\n\n"
+        "Browse operations return compact summaries {iri, label, definition}. "
+        "Use get_concept(iri) for the full record.\n\n"
+        "Keep max_depth=1. Navigate incrementally with get_children instead of deep traversal."
     ),
     lifespan=app_lifespan,
 )
@@ -201,7 +204,9 @@ async def get_children(ctx: Context, iri: str, max_depth: int = 1) -> str:
     """Get child concepts of a FOLIO concept. Returns compact summaries.
 
     Args:
-        iri: The parent concept IRI or identifier.
+        iri: A concept IRI (e.g., "https://folio.openlegalstandard.org/R07tQM...")
+            or short ID (e.g., "R07tQM..."). NOT a branch name — use
+            get_taxonomy_branch for branch names like "areas_of_law".
         max_depth: Depth limit (default 1 for direct children).
             Keep at 1-2 to avoid large results.
 
@@ -217,7 +222,8 @@ async def get_parents(ctx: Context, iri: str, max_depth: int = 1) -> str:
     """Get parent concepts of a FOLIO concept. Returns compact summaries.
 
     Args:
-        iri: The concept IRI or identifier.
+        iri: A concept IRI (e.g., "https://folio.openlegalstandard.org/R07tQM...")
+            or short ID. NOT a branch name.
         max_depth: Depth limit (default 1 for direct parents).
 
     Returns:
