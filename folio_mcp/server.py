@@ -1,7 +1,7 @@
 """
 MCP server for FOLIO, the Federated Open Legal Information Ontology.
 
-Provides 10 tools and 2 resources for searching, browsing, and exporting
+Provides 12 tools and 3 resources for searching, browsing, and exporting
 concepts from the FOLIO legal ontology (18,000+ concepts, CC-BY 4.0).
 
 Supports two backends:
@@ -360,6 +360,18 @@ async def stats_resource() -> str:
     """FOLIO ontology statistics."""
     if _shared_backend is not None:
         return await _shared_backend.get_stats_resource()
+    return json.dumps({"error": "Backend not available outside request context"})
+
+
+@mcp.resource(
+    "folio://branch/{branch_name}",
+    description="Top-level concepts in a FOLIO taxonomy branch. "
+    "Use folio://branches to see available branch names.",
+)
+async def branch_resource(branch_name: str) -> str:
+    """Get top-level concepts for a specific FOLIO taxonomy branch."""
+    if _shared_backend is not None:
+        return await _shared_backend.get_taxonomy_branch(branch_name, max_depth=1)
     return json.dumps({"error": "Backend not available outside request context"})
 
 
