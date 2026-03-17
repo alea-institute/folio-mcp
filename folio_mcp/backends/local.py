@@ -66,8 +66,19 @@ def resolve_iri(folio: FOLIO, iri: str) -> Tuple[Optional[OWLClass | OWLObjectPr
     return None, None
 
 
+def owl_class_to_summary(cls: OWLClass) -> dict:
+    """Compact summary for browse/list operations — iri, label, definition only."""
+    result: dict = {
+        "iri": cls.iri,
+        "label": cls.label,
+    }
+    if cls.definition:
+        result["definition"] = cls.definition
+    return result
+
+
 def owl_class_to_dict(cls: OWLClass) -> dict:
-    """Serialize an OWLClass, including all non-empty fields."""
+    """Full serialization for get_concept — all non-empty fields."""
     result: dict = {
         "iri": cls.iri,
         "label": cls.label,
@@ -205,7 +216,7 @@ class LocalBackend:
 
         method = getattr(self.folio, BRANCH_METHODS[branch_name])
         concepts = method(max_depth=max_depth)
-        return json.dumps([owl_class_to_dict(c) for c in concepts], indent=2)
+        return json.dumps([owl_class_to_summary(c) for c in concepts], indent=2)
 
     async def get_children(self, iri: str, max_depth: int) -> str:
         entity, entity_type = resolve_iri(self.folio, iri)
@@ -213,7 +224,7 @@ class LocalBackend:
             return json.dumps({"error": f"Concept not found: {iri}"})
 
         children = self.folio.get_children(entity.iri, max_depth=max_depth)
-        return json.dumps([owl_class_to_dict(c) for c in children], indent=2)
+        return json.dumps([owl_class_to_summary(c) for c in children], indent=2)
 
     async def get_parents(self, iri: str, max_depth: int) -> str:
         entity, entity_type = resolve_iri(self.folio, iri)
@@ -221,7 +232,7 @@ class LocalBackend:
             return json.dumps({"error": f"Concept not found: {iri}"})
 
         parents = self.folio.get_parents(entity.iri, max_depth=max_depth)
-        return json.dumps([owl_class_to_dict(c) for c in parents], indent=2)
+        return json.dumps([owl_class_to_summary(c) for c in parents], indent=2)
 
     async def get_properties(self) -> str:
         props = self.folio.get_all_properties()
@@ -281,7 +292,7 @@ class LocalBackend:
             match_mode=match_mode,
             limit=limit,
         )
-        return json.dumps([owl_class_to_dict(c) for c in results], indent=2)
+        return json.dumps([owl_class_to_summary(c) for c in results], indent=2)
 
     async def query_properties(
         self,

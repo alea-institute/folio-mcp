@@ -15,8 +15,16 @@ import httpx
 from folio_mcp.backends._branch_data import BRANCH_API_PATHS, BRANCH_NAMES
 
 
+def _summary_class(d: dict) -> dict:
+    """Compact summary for browse/list — iri, label, definition only."""
+    result = {"iri": d.get("iri", ""), "label": d.get("label", "")}
+    if d.get("definition"):
+        result["definition"] = d["definition"]
+    return result
+
+
 def _compact_class(d: dict) -> dict:
-    """Serialize an API response class dict, including all non-empty fields."""
+    """Full serialization — all non-empty fields."""
     result = {"iri": d.get("iri", ""), "label": d.get("label", "")}
     if d.get("definition"):
         result["definition"] = d["definition"]
@@ -202,7 +210,7 @@ class APIBackend:
             resp = await self._get(f"/taxonomy/{api_path}", max_depth=max_depth)
             data = resp.json()
             classes = data.get("classes", [])
-            return json.dumps([_compact_class(c) for c in classes], indent=2)
+            return json.dumps([_summary_class(c) for c in classes], indent=2)
         except httpx.HTTPError as e:
             return json.dumps({"error": f"API error: {e}"})
 
@@ -212,7 +220,7 @@ class APIBackend:
             resp = await self._get(f"/taxonomy/tree/node/{iri_id}")
             data = resp.json()
             children = data.get("children", [])
-            return json.dumps([_compact_class(c) for c in children], indent=2)
+            return json.dumps([_summary_class(c) for c in children], indent=2)
         except httpx.HTTPError as e:
             return json.dumps({"error": f"API error: {e}"})
 
@@ -222,7 +230,7 @@ class APIBackend:
             resp = await self._get(f"/taxonomy/tree/node/{iri_id}")
             data = resp.json()
             parents = data.get("parents", [])
-            return json.dumps([_compact_class(c) for c in parents], indent=2)
+            return json.dumps([_summary_class(c) for c in parents], indent=2)
         except httpx.HTTPError as e:
             return json.dumps({"error": f"API error: {e}"})
 
@@ -298,7 +306,7 @@ class APIBackend:
             resp = await self._get("/search/query", **params)
             data = resp.json()
             classes = data.get("classes", [])
-            return json.dumps([_compact_class(c) for c in classes], indent=2)
+            return json.dumps([_summary_class(c) for c in classes], indent=2)
         except httpx.HTTPError as e:
             return json.dumps({"error": f"API error: {e}"})
 
