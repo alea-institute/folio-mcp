@@ -116,12 +116,14 @@ pip install folio-mcp
 folio-mcp
 ```
 
-## Tools
+## Tools (12)
 
 | Tool | Description |
 |------|-------------|
 | `search_concepts(query, limit=10)` | Search concepts by label/name using fuzzy matching |
 | `search_definitions(query, limit=10)` | Search concepts by definition text |
+| `query_concepts(...)` | Advanced query with composable text and structural filters |
+| `query_properties(...)` | Query OWL object properties by label, domain, range |
 | `get_concept(iri)` | Get full details for a concept by IRI |
 | `export_concept(iri, format)` | Export a concept as markdown, JSON-LD, or OWL XML |
 | `list_branches()` | List all 24 taxonomy branches with concept counts |
@@ -131,12 +133,15 @@ folio-mcp
 | `get_properties()` | Get all OWL object properties (relationships) |
 | `find_connections(subject_iri, property_name, object_iri)` | Find semantic triples |
 
-## Resources
+All responses include full concept data when available: translations (31% of concepts, 10+ languages), preferred labels, external identifiers, alternative labels, examples, cross-references, and more.
+
+## Resources (3)
 
 | Resource URI | Description |
 |---|---|
-| `folio://branches` | Branch names with concept counts |
-| `folio://stats` | Ontology statistics (version, class/property counts) |
+| `folio://branches` | Branch names with concept counts (564 bytes) |
+| `folio://stats` | Ontology statistics — version, class/property counts, license |
+| `folio://branch/{name}` | Top-level concepts in a specific branch (on-demand, 1-288KB) |
 
 ## Taxonomy Branches
 
