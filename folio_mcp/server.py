@@ -347,20 +347,15 @@ async def query_properties(
 
 
 @mcp.resource("folio://branches")
-async def branches_resource() -> str:
+async def branches_resource(ctx: Context) -> str:
     """FOLIO taxonomy branch names with concept counts."""
-    if _shared_backend is not None:
-        return await _shared_backend.get_branches_resource()
-    # Fallback: resources called outside request context use shared backend
-    return json.dumps({"error": "Backend not available outside request context"})
+    return await _get_backend(ctx).get_branches_resource()
 
 
 @mcp.resource("folio://stats")
-async def stats_resource() -> str:
+async def stats_resource(ctx: Context) -> str:
     """FOLIO ontology statistics."""
-    if _shared_backend is not None:
-        return await _shared_backend.get_stats_resource()
-    return json.dumps({"error": "Backend not available outside request context"})
+    return await _get_backend(ctx).get_stats_resource()
 
 
 @mcp.resource(
@@ -368,11 +363,9 @@ async def stats_resource() -> str:
     description="Top-level concepts in a FOLIO taxonomy branch. "
     "Use folio://branches to see available branch names.",
 )
-async def branch_resource(branch_name: str) -> str:
+async def branch_resource(ctx: Context, branch_name: str) -> str:
     """Get top-level concepts for a specific FOLIO taxonomy branch."""
-    if _shared_backend is not None:
-        return await _shared_backend.get_taxonomy_branch(branch_name, max_depth=1)
-    return json.dumps({"error": "Backend not available outside request context"})
+    return await _get_backend(ctx).get_taxonomy_branch(branch_name, max_depth=1)
 
 
 # ── Entry point ────────────────────────────────────────────────────────
