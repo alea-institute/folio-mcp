@@ -30,8 +30,16 @@ def _compact_class(d: dict) -> dict:
         result["parent_iris"] = d["sub_class_of"]
     if d.get("parent_class_of"):
         result["child_iris"] = d["parent_class_of"]
+    if d.get("preferred_label") and d.get("preferred_label") != d.get("label"):
+        result["preferred_label"] = d["preferred_label"]
+    if d.get("identifier"):
+        result["identifier"] = d["identifier"]
+    if d.get("hidden_label"):
+        result["hidden_label"] = d["hidden_label"]
     if d.get("see_also"):
         result["see_also"] = d["see_also"]
+    if d.get("is_defined_by"):
+        result["is_defined_by"] = d["is_defined_by"]
     if d.get("notes"):
         result["notes"] = d["notes"]
     if d.get("comment"):

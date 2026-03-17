@@ -84,8 +84,16 @@ def owl_class_to_dict(cls: OWLClass) -> dict:
         result["parent_iris"] = cls.sub_class_of
     if cls.parent_class_of:
         result["child_iris"] = cls.parent_class_of
+    if cls.preferred_label and cls.preferred_label != cls.label:
+        result["preferred_label"] = cls.preferred_label
+    if cls.identifier:
+        result["identifier"] = cls.identifier
+    if cls.hidden_label:
+        result["hidden_label"] = cls.hidden_label
     if cls.see_also:
         result["see_also"] = cls.see_also
+    if cls.is_defined_by:
+        result["is_defined_by"] = cls.is_defined_by
     if cls.notes:
         result["notes"] = cls.notes
     if cls.comment:
