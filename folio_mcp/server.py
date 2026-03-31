@@ -90,7 +90,12 @@ mcp = FastMCP(
         "Branch names like 'areas_of_law' are NOT IRIs — use get_taxonomy_branch for those.\n\n"
         "Browse operations return compact summaries {iri, label, definition}. "
         "Use get_concept(iri) for the full record.\n\n"
-        "Keep max_depth=1. Navigate incrementally with get_children instead of deep traversal."
+        "Keep max_depth=1. Navigate incrementally with get_children instead of deep traversal.\n\n"
+        "Classification workflows (available as slash commands):\n"
+        "- /folio:classify-document — classify a legal document against the document_artifacts taxonomy\n"
+        "- /folio:identify-area-of-law — identify areas of law for a legal situation\n"
+        "- /folio:classify-entity — classify a legal entity against actors_players and legal_entities\n"
+        "Suggest these when users need to classify, categorize, or identify legal concepts."
     ),
     lifespan=app_lifespan,
 )

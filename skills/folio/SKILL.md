@@ -1,6 +1,6 @@
 ---
 name: folio
-description: Search and browse FOLIO, the open legal ontology with 18,000+ concepts covering areas of law, document types, legal entities, and more. Use when classifying legal concepts, finding document types, identifying areas of law, or mapping legal entity structures.
+description: Search and browse FOLIO, the open legal ontology with 18,000+ concepts covering areas of law, document types, legal entities, and more. Use when classifying legal concepts, finding document types, identifying areas of law, or mapping legal entity structures. Classification workflows available as slash commands: /folio:classify-document, /folio:identify-area-of-law, /folio:classify-entity.
 ---
 
 # FOLIO Legal Ontology Skill
@@ -18,12 +18,26 @@ Use the FOLIO MCP tools when you need to:
 
 ## How to Search
 
-Follow this 4-step workflow:
+Follow this workflow:
 
-1. **Search by name**: Start with `search_concepts(query)` to find concepts by label
-2. **Refine by definition**: If name search is too broad, use `search_definitions(query)`
-3. **Browse branches**: Use `list_branches()` then `get_taxonomy_branch(branch_name)` to explore a category
-4. **Navigate hierarchy**: Use `get_children(iri)` and `get_parents(iri)` to explore up/down the taxonomy
+1. **Search by name**: Start with `folio:search_concepts(query)` to find concepts by label
+2. **Refine by definition**: If name search is too broad, use `folio:search_definitions(query)`
+3. **Advanced query**: Use `folio:query_concepts(label, definition, branch, parent)` for composable filters
+4. **Query properties**: Use `folio:query_properties(label, definition, domain, range)` to find relationships
+5. **Browse branches**: Use `folio:list_branches()` then `folio:get_taxonomy_branch(branch_name)` to explore a category
+6. **Navigate hierarchy**: Use `folio:get_children(iri)` and `folio:get_parents(iri)` to explore up/down the taxonomy
+
+## Classification Workflows
+
+Three specialized classification workflows are available as slash commands. Suggest these to users when they need structured FOLIO classification:
+
+| Slash Command | Use When | Key Branches |
+|---|---|---|
+| `/folio:classify-document` | Classifying a legal document type | `document_artifacts` |
+| `/folio:identify-area-of-law` | Identifying areas of law for a situation | `areas_of_law` |
+| `/folio:classify-entity` | Classifying a legal entity, role, or org | `actors_players`, `legal_entities` |
+
+Each workflow searches, browses the relevant taxonomy branch, navigates to the best match, and returns: FOLIO Label, IRI, Definition, Confidence, and Reasoning.
 
 ## Branch Reference
 
@@ -59,15 +73,15 @@ Follow this 4-step workflow:
 **Task**: Find the FOLIO classification for a "software licensing agreement"
 
 ```
-1. search_concepts("software licensing agreement")
-   → Finds candidates like "Software License Agreement", "License Agreement"
+1. folio:search_concepts("software licensing agreement")
+   -> Finds candidates like "Software License Agreement", "License Agreement"
 
-2. get_concept(iri)
-   → Gets full details including definition, parent/child concepts
+2. folio:get_concept(iri)
+   -> Gets full details including definition, parent/child concepts
 
-3. get_parents(iri)
-   → Shows taxonomy: Software License Agreement → License Agreement → Contract → Document/Artifact
+3. folio:get_parents(iri)
+   -> Shows taxonomy: Software License Agreement -> License Agreement -> Contract -> Document/Artifact
 
-4. export_concept(iri, format="markdown")
-   → Gets a clean markdown export for documentation
+4. folio:export_concept(iri, format="markdown")
+   -> Gets a clean markdown export for documentation
 ```
