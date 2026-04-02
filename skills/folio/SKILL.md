@@ -29,13 +29,21 @@ Follow this workflow:
 
 ## Classification Workflows
 
-Three specialized classification workflows are available as slash commands. Suggest these to users when they need structured FOLIO classification:
+Eleven specialized classification workflows are available as slash commands. Suggest these to users when they need structured FOLIO classification:
 
 | Slash Command | Use When | Key Branches |
 |---|---|---|
 | `/folio:classify-document` | Classifying a legal document type | `document_artifacts` |
 | `/folio:identify-area-of-law` | Identifying areas of law for a situation | `areas_of_law` |
 | `/folio:classify-entity` | Classifying a legal entity, role, or org | `actors_players`, `legal_entities` |
+| `/folio:classify-industry` | Classifying the industry for a matter or client | `industries` |
+| `/folio:identify-legal-authority` | Identifying the type of legal authority | `legal_authorities` |
+| `/folio:classify-event` | Classifying a legal event type | `events` |
+| `/folio:identify-service-type` | Identifying the type of legal service needed | `services` |
+| `/folio:identify-forum-venue` | Identifying the forum, venue, or governmental body | `forum_venues`, `governmental_bodies` |
+| `/folio:identify-objective` | Identifying legal objectives for a matter | `objectives` |
+| `/folio:classify-asset` | Classifying an asset type | `asset_types` |
+| `/folio:identify-engagement-terms` | Identifying engagement terms for a legal arrangement | `engagement_terms` |
 
 Each workflow searches, browses the relevant taxonomy branch, navigates to the best match, and returns: FOLIO Label, IRI, Definition, Confidence, and Reasoning.
 

@@ -36,10 +36,25 @@
     "get_children",
     "get_parents",
     "get_properties",
-    "find_connections"
+    "find_connections",
+    "query_concepts",
+    "query_properties"
   ],
   "resources": [
     "folio://branches",
     "folio://stats"
+  ],
+  "prompts": [
+    "classify-document",
+    "identify-area-of-law",
+    "classify-entity",
+    "classify-industry",
+    "identify-legal-authority",
+    "classify-event",
+    "identify-service-type",
+    "identify-forum-venue",
+    "identify-objective",
+    "classify-asset",
+    "identify-engagement-terms"
   ]
 }

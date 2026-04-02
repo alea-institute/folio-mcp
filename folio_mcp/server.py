@@ -1,7 +1,7 @@
 """
 MCP server for FOLIO, the Federated Open Legal Information Ontology.
 
-Provides 12 tools, 3 resources, and 3 prompt templates for searching,
+Provides 12 tools, 3 resources, and 11 prompt templates for searching,
 browsing, and classifying concepts from the FOLIO legal ontology
 (18,000+ concepts, CC-BY 4.0).
 
@@ -95,6 +95,14 @@ mcp = FastMCP(
         "- /folio:classify-document — classify a legal document against the document_artifacts taxonomy\n"
         "- /folio:identify-area-of-law — identify areas of law for a legal situation\n"
         "- /folio:classify-entity — classify a legal entity against actors_players and legal_entities\n"
+        "- /folio:classify-industry — classify the industry sector for a matter or client\n"
+        "- /folio:identify-legal-authority — identify the type of legal authority (statute, regulation, etc.)\n"
+        "- /folio:classify-event — classify a legal event (dispute, transaction, regulatory, etc.)\n"
+        "- /folio:identify-service-type — identify the type of legal service needed\n"
+        "- /folio:identify-forum-venue — identify the appropriate forum, venue, or governmental body\n"
+        "- /folio:identify-objective — identify legal objectives for a matter\n"
+        "- /folio:classify-asset — classify an asset type (tangible, intangible, financial, estate)\n"
+        "- /folio:identify-engagement-terms — identify engagement terms for a legal services arrangement\n"
         "Suggest these when users need to classify, categorize, or identify legal concepts."
     ),
     lifespan=app_lifespan,
@@ -483,6 +491,241 @@ def classify_entity(entity: str) -> list:
             f"- Definition\n"
             f"- Branch (actors_players or legal_entities)\n"
             f"- Confidence (high/medium/low)\n"
+            f"- Brief reasoning"
+        ),
+    ]
+
+
+@mcp.prompt(
+    name="classify-industry",
+    description="Classify the industry for a legal matter, client, or company "
+    "using the FOLIO ontology's industries taxonomy (21 sectors).",
+)
+def classify_industry(description: str) -> list:
+    """Classify a matter or client by industry sector."""
+    return [
+        UserMessage(
+            f"Classify the industry for this matter or client "
+            f"using the FOLIO ontology:\n\n"
+            f'"{description}"\n\n'
+            f"Steps:\n"
+            f"1. Use search_concepts to find matching industry types\n"
+            f"2. Browse the industries branch with get_taxonomy_branch "
+            f"to review all 21 top-level industry sectors\n"
+            f"3. Use get_children on the best sector to find sub-industries\n"
+            f"4. Use get_concept on the best match for full details\n\n"
+            f"Return the classification as:\n"
+            f"- FOLIO Label\n"
+            f"- FOLIO IRI\n"
+            f"- Definition\n"
+            f"- Parent sector (if sub-industry)\n"
+            f"- Confidence (high/medium/low)\n"
+            f"- Brief reasoning"
+        ),
+    ]
+
+
+@mcp.prompt(
+    name="identify-legal-authority",
+    description="Identify the type of legal authority (statute, regulation, case law, "
+    "treaty, executive order, etc.) using the FOLIO ontology's legal_authorities taxonomy.",
+)
+def identify_legal_authority(authority: str) -> list:
+    """Identify the type of a legal authority or source of law."""
+    return [
+        UserMessage(
+            f"Identify the type of legal authority using the FOLIO ontology:\n\n"
+            f'"{authority}"\n\n'
+            f"Steps:\n"
+            f"1. Use search_concepts to find matching authority types\n"
+            f"2. Browse the legal_authorities branch with get_taxonomy_branch "
+            f"to review all 14 top-level authority types\n"
+            f"3. Use get_children on the best category to find specific subtypes\n"
+            f"4. Use get_concept on the best match for full details\n\n"
+            f"Return the classification as:\n"
+            f"- FOLIO Label\n"
+            f"- FOLIO IRI\n"
+            f"- Definition\n"
+            f"- Parent category\n"
+            f"- Confidence (high/medium/low)\n"
+            f"- Brief reasoning"
+        ),
+    ]
+
+
+@mcp.prompt(
+    name="classify-event",
+    description="Classify a legal event (dispute, transaction, regulatory action, "
+    "bankruptcy filing, employment action, etc.) using the FOLIO ontology's events taxonomy.",
+)
+def classify_event(event: str) -> list:
+    """Classify a legal event against the FOLIO events taxonomy."""
+    return [
+        UserMessage(
+            f"Classify this legal event using the FOLIO ontology:\n\n"
+            f'"{event}"\n\n'
+            f"Steps:\n"
+            f"1. Use search_concepts to find matching event types\n"
+            f"2. Browse the events branch with get_taxonomy_branch "
+            f"to review all 14 top-level event categories\n"
+            f"3. Use get_children on the best category to find the specific event type\n"
+            f"4. Use get_concept on the best match for full details\n\n"
+            f"Return the classification as:\n"
+            f"- FOLIO Label\n"
+            f"- FOLIO IRI\n"
+            f"- Definition\n"
+            f"- Parent category\n"
+            f"- Confidence (high/medium/low)\n"
+            f"- Brief reasoning"
+        ),
+    ]
+
+
+@mcp.prompt(
+    name="identify-service-type",
+    description="Identify the type of legal service needed for a matter — advisory, "
+    "transactional, dispute, regulatory, or bankruptcy/restructuring.",
+)
+def identify_service_type(matter: str) -> list:
+    """Identify the legal service type for a matter."""
+    return [
+        UserMessage(
+            f"Identify the type of legal service needed for this matter "
+            f"using the FOLIO ontology:\n\n"
+            f'"{matter}"\n\n'
+            f"Steps:\n"
+            f"1. Use search_concepts to find matching service types\n"
+            f"2. Browse the services branch with get_taxonomy_branch "
+            f"to review all 5 top-level service categories "
+            f"(Advisory, Transactional, Dispute, Regulatory, Bankruptcy/Restructuring)\n"
+            f"3. Use get_children on the best match to find specific service subtypes\n"
+            f"4. Use get_concept on the best match for full details\n\n"
+            f"Return each applicable service type as:\n"
+            f"- FOLIO Label\n"
+            f"- FOLIO IRI\n"
+            f"- Definition\n"
+            f"- Relevance (primary/secondary)\n"
+            f"- Brief reasoning"
+        ),
+    ]
+
+
+@mcp.prompt(
+    name="identify-forum-venue",
+    description="Identify the appropriate forum, venue, or governmental body for a "
+    "legal dispute or regulatory matter using the FOLIO ontology.",
+)
+def identify_forum_venue(matter: str) -> list:
+    """Identify the forum, venue, or governmental body for a matter."""
+    return [
+        UserMessage(
+            f"Identify the appropriate forum, venue, or governmental body "
+            f"for this matter using the FOLIO ontology:\n\n"
+            f'"{matter}"\n\n'
+            f"Steps:\n"
+            f"1. Use search_concepts to find matching forums, venues, or bodies\n"
+            f"2. Browse the forum_venues branch with get_taxonomy_branch "
+            f"to see dispute forums, stock exchanges, and dispute venues\n"
+            f"3. Also browse the governmental_bodies branch with get_taxonomy_branch "
+            f"to see federal, state, local, regulatory, and multinational bodies\n"
+            f"4. Use get_children on the best matches to find specific subtypes\n"
+            f"5. Use get_concept on each match for full details\n\n"
+            f"Return each applicable forum or body as:\n"
+            f"- FOLIO Label\n"
+            f"- FOLIO IRI\n"
+            f"- Definition\n"
+            f"- Branch (forum_venues or governmental_bodies)\n"
+            f"- Relevance (primary/secondary)\n"
+            f"- Brief reasoning"
+        ),
+    ]
+
+
+@mcp.prompt(
+    name="identify-objective",
+    description="Identify the legal objectives for a matter — litigation claims/defenses, "
+    "transactional goals, regulatory filings, risk management, etc.",
+)
+def identify_objective(matter: str) -> list:
+    """Identify legal objectives for a matter."""
+    return [
+        UserMessage(
+            f"Identify the legal objectives for this matter "
+            f"using the FOLIO ontology:\n\n"
+            f'"{matter}"\n\n'
+            f"Steps:\n"
+            f"1. Use search_concepts to find matching legal objectives\n"
+            f"2. Browse the objectives branch with get_taxonomy_branch "
+            f"to review all 13 top-level objective categories\n"
+            f"3. Use get_children on the most relevant categories "
+            f"to find specific objectives\n"
+            f"4. Use get_concept on each match for full details\n\n"
+            f"Return each applicable objective as:\n"
+            f"- FOLIO Label\n"
+            f"- FOLIO IRI\n"
+            f"- Definition\n"
+            f"- Parent category\n"
+            f"- Relevance (primary/secondary)\n"
+            f"- Brief reasoning"
+        ),
+    ]
+
+
+@mcp.prompt(
+    name="classify-asset",
+    description="Classify an asset as tangible, intangible, financial, or estate "
+    "using the FOLIO ontology's asset_types taxonomy.",
+)
+def classify_asset(asset: str) -> list:
+    """Classify an asset against the FOLIO asset types taxonomy."""
+    return [
+        UserMessage(
+            f"Classify this asset using the FOLIO ontology:\n\n"
+            f'"{asset}"\n\n'
+            f"Steps:\n"
+            f"1. Use search_concepts to find matching asset types\n"
+            f"2. Browse the asset_types branch with get_taxonomy_branch "
+            f"to see the 4 top-level categories "
+            f"(Tangible Assets, Intangible Assets, Financial Assets, Estate)\n"
+            f"3. Use get_children on the best category to find the specific asset type\n"
+            f"4. Use get_concept on the best match for full details\n\n"
+            f"Return the classification as:\n"
+            f"- FOLIO Label\n"
+            f"- FOLIO IRI\n"
+            f"- Definition\n"
+            f"- Parent category\n"
+            f"- Confidence (high/medium/low)\n"
+            f"- Brief reasoning"
+        ),
+    ]
+
+
+@mcp.prompt(
+    name="identify-engagement-terms",
+    description="Identify the engagement terms for a legal services arrangement — "
+    "fee model, invoice terms, engagement type, and billing details.",
+)
+def identify_engagement_terms(arrangement: str) -> list:
+    """Identify engagement terms for a legal services arrangement."""
+    return [
+        UserMessage(
+            f"Identify the engagement terms for this legal services arrangement "
+            f"using the FOLIO ontology:\n\n"
+            f'"{arrangement}"\n\n'
+            f"Steps:\n"
+            f"1. Use search_concepts to find matching engagement terms\n"
+            f"2. Browse the engagement_terms branch with get_taxonomy_branch "
+            f"to review all 14 top-level categories "
+            f"(fee models, invoice terms, engagement arrangements, etc.)\n"
+            f"3. Use get_children on the most relevant categories "
+            f"to find specific terms\n"
+            f"4. Use get_concept on each match for full details\n\n"
+            f"Return each applicable term as:\n"
+            f"- FOLIO Label\n"
+            f"- FOLIO IRI\n"
+            f"- Definition\n"
+            f"- Parent category\n"
+            f"- Relevance (primary/secondary)\n"
             f"- Brief reasoning"
         ),
     ]
