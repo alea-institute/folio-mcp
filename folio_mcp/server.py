@@ -21,6 +21,7 @@ from typing import Optional
 from mcp.server.fastmcp import Context, FastMCP
 
 # project imports
+from folio_mcp import __version__
 from folio_mcp.backends._branch_data import BRANCH_METHODS, BRANCH_NAMES
 from folio_mcp.backends.protocol import FOLIOBackend
 
@@ -738,6 +739,11 @@ def main():
     """Run the FOLIO MCP server with stdio transport."""
     parser = argparse.ArgumentParser(
         description="FOLIO Legal Ontology MCP Server",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     parser.add_argument(
         "--local",

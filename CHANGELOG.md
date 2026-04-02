@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1 (2026-04-02)
+
+### Added
+
+- `--version` flag to the CLI
+
 ## 0.4.0 (2026-04-02)
 
 ### Added
