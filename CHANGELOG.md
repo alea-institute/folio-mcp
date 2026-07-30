@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0 (2026-07-29)
+
+### Changed
+
+- Migrated to `mcp` Python SDK v2 (`mcp>=2.0`)
+  - `FastMCP` → `MCPServer`, import moved from `mcp.server.fastmcp` to `mcp.server.mcpserver`
+  - Server now reports its own version (`version=__version__`) instead of an empty string, since v2 no longer mirrors the SDK version by default
+  - Tightened the `mcp` dependency floor from `>=1.26` to `>=2.0` since the code now uses v2-only import paths
+
 ## 0.4.1 (2026-04-02)
 
 ### Added
