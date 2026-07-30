@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 # packages
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.mcpserver import Context, MCPServer
 
 # project imports
 from folio_mcp import __version__
@@ -61,7 +61,7 @@ async def app_lifespan(server):
         backend = APIBackend(base_url=_config["api_url"])
 
     # Also store as _shared_backend so static resources (no ctx) can access it.
-    # FastMCP treats resource handlers with any parameter (including ctx) as templates,
+    # MCPServer treats resource handlers with any parameter (including ctx) as templates,
     # so static resources like folio://branches must be zero-arg functions.
     _shared_backend = backend
 
@@ -74,7 +74,7 @@ async def app_lifespan(server):
 
 
 # Create the MCP server
-mcp = FastMCP(
+mcp = MCPServer(
     "FOLIO Legal Ontology",
     instructions=(
         "Access FOLIO, the Federated Open Legal Information Ontology. "
@@ -106,6 +106,7 @@ mcp = FastMCP(
         "- /folio:identify-engagement-terms — identify engagement terms for a legal services arrangement\n"
         "Suggest these when users need to classify, categorize, or identify legal concepts."
     ),
+    version=__version__,
     lifespan=app_lifespan,
 )
 
@@ -413,7 +414,7 @@ async def branch_resource(branch_name: str) -> str:
 # ── Prompts ────────────────────────────────────────────────────────────
 
 
-from mcp.server.fastmcp.prompts.base import AssistantMessage, UserMessage
+from mcp.server.mcpserver.prompts.base import AssistantMessage, UserMessage
 
 
 @mcp.prompt(
