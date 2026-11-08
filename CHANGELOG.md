@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.2 (2026-11-08)
+
+### Fixed
+
+- `uvx folio-mcp` crashed at startup with `ModuleNotFoundError: No module named 'mcp.server.fastmcp'` whenever the resolver picked `mcp` 2.x, which removed the FastMCP API this server uses. The dependency now reads `mcp[cli]>=1.26,<2`.
+
+### Changed
+
+- `manifest.json` and `smithery.yaml` versions now track the package version.
+
 ## 0.4.1 (2026-04-02)
 
 ### Added
