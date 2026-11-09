@@ -10,6 +10,7 @@
 - `get_parents` no longer lists the concept itself (local) or `owl:Thing` (API).
 - API mode: `get_children`/`get_parents` now honour `max_depth`; errors are short (`FOLIO API error (HTTP 500)`, `Concept not found: X`) instead of httpx messages with URLs and MDN links.
 - Local IRI resolution no longer suffix-matches fragments such as `""` or `"A"` to random concepts.
+- A session cancelled mid-flight (idle timeout, server shutdown) never released its reference to a backend the server created itself. The cancellation fired at the lock acquire in the lifespan's cleanup, so that backend was never closed. The cleanup is now shielded. folio-api's injected backend was never affected.
 
 ### Changed
 
@@ -17,6 +18,7 @@
 - **Compact output.** JSON is unindented with UTF-8 kept; `"NULL"` placeholder definitions and empty fields are dropped; list views shorten definitions to 300 characters (`get_concept` keeps full text). `get_properties` returns iri/label/short definition (81 KB to 30 KB); use `query_properties` for domain/range.
 - `find_connections` explains empty results: FOLIO records only ~29 property triples.
 - Tool descriptions and server instructions now steer clients to `search_concepts` first, mark `search_definitions` as a loose fallback, and use property examples that exist (`folio:advised`, `folio:drafted`). `classify-document` no longer claims 8 top-level document categories (there are 7).
+- Corrected the 0.4.3 note on thread offload: it does not free the event loop during fuzzy search (see below).
 
 ## 0.4.3 (2026-11-09)
 
@@ -24,7 +26,7 @@
 
 - **Embedded server lost its shared graph after the first session.** Under streamable HTTP, FastMCP enters the server lifespan once per *session*. The lifespan cleared the backend that `set_shared_folio()` injected whenever any session ended, so every later session in folio-api fell back to an `APIBackend` that called the public REST API (the server calling itself, through its own rate limiter, which answered 429 under load). An injected backend is now never cleared or closed by a session.
 - **One session closed the backend other sessions were using.** A backend the server creates itself is now shared by all live sessions, reference-counted, and closed only when the last session ends. Before, overlapping sessions failed with `Cannot send a request, as the client has been closed.`
-- **Local-backend calls blocked the event loop.** folio-python's searches and traversals are synchronous, so each call stalled every other session, request and SSE stream on the same worker. They now run in worker threads, and the local-mode ontology load at first session does too.
+- **Local-backend calls ran inline on the event loop.** folio-python's searches and traversals are synchronous. They now run in worker threads, as does the local-mode ontology load at first session. This frees the loop for the pure-Python tools (`query_concepts`, taxonomy traversal). It does **not** help `search_concepts` and `search_definitions`, which spend their time in a rapidfuzz call that holds the GIL. Freeing the loop during those needs a GIL-releasing search in folio-python.
 - `test_query_has_children_filter` had been failing since browse responses went compact; it now checks the filter against the graph.
 
 ## 0.4.2 (2026-11-08)

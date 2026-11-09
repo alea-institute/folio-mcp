@@ -113,12 +113,15 @@ async def app_lifespan(server):
     try:
         yield {"backend": backend}
     finally:
-        async with _owned_lock:
-            _owned_refs -= 1
-            if _owned_refs == 0 and _owned_backend is backend:
-                _owned_backend = None
-                if hasattr(backend, "close"):
-                    await backend.close()
+        # Shielded: a cancelled session (idle timeout, shutdown) would
+        # otherwise raise at the lock acquire and never release its ref.
+        with anyio.CancelScope(shield=True):
+            async with _owned_lock:
+                _owned_refs -= 1
+                if _owned_refs == 0 and _owned_backend is backend:
+                    _owned_backend = None
+                    if hasattr(backend, "close"):
+                        await backend.close()
 
 
 # Create the MCP server
