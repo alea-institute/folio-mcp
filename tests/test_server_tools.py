@@ -154,6 +154,20 @@ class TestBrowse:
         iris = [p["iri"] for p in data] if isinstance(data, list) else []
         assert AREA_OF_LAW not in iris and OWL_THING not in iris
 
+    async def test_get_parents_excludes_self_given_short_id(self, mcp_backend):
+        """Short IDs are valid input; the concept must not list itself as a parent."""
+        children, _ = await call("get_children", iri=AREA_OF_LAW)
+        child_iri = children[0]["iri"]
+        short_id = child_iri.rsplit("/", 1)[-1]
+        data, _ = await call("get_parents", iri=short_id)
+        assert [p["iri"] for p in data] == [AREA_OF_LAW]
+
+    async def test_get_children_excludes_self_given_short_id(self, mcp_backend):
+        short_id = AREA_OF_LAW.rsplit("/", 1)[-1]
+        data, _ = await call("get_children", iri=short_id)
+        assert isinstance(data, list) and data
+        assert AREA_OF_LAW not in [c["iri"] for c in data]
+
     async def test_get_parents_of_child(self, mcp_backend):
         children, _ = await call("get_children", iri=AREA_OF_LAW)
         data, _ = await call("get_parents", iri=children[0]["iri"])
