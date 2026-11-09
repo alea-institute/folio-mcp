@@ -120,8 +120,8 @@ folio-mcp
 
 | Tool | Description |
 |------|-------------|
-| `search_concepts(query, limit=10)` | Search concepts by label/name using fuzzy matching |
-| `search_definitions(query, limit=10)` | Search concepts by definition text |
+| `search_concepts(query, limit=10)` | Search concepts by label/name using fuzzy matching (start here; max 50) |
+| `search_definitions(query, limit=10)` | Loose fuzzy search over definition text (fallback) |
 | `query_concepts(...)` | Advanced query with composable text and structural filters |
 | `query_properties(...)` | Query OWL object properties by label, domain, range |
 | `get_concept(iri)` | Get full details for a concept by IRI |
@@ -130,7 +130,7 @@ folio-mcp
 | `get_taxonomy_branch(branch_name, max_depth)` | Get concepts in a taxonomy branch |
 | `get_children(iri, max_depth)` | Get child concepts |
 | `get_parents(iri, max_depth)` | Get parent concepts |
-| `get_properties()` | Get all OWL object properties (relationships) |
+| `get_properties()` | List all OWL object properties (iri, label, short definition) |
 | `find_connections(subject_iri, property_name, object_iri)` | Find semantic triples |
 
 Browse operations return compact summaries (iri, label, definition). Use `get_concept(iri)` for full details including translations (31% of concepts, 10+ languages), preferred labels, external identifiers, and cross-references.

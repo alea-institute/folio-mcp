@@ -87,3 +87,119 @@ BRANCH_METHODS = {
     "statuses": "get_statuses",
     "system_identifiers": "get_system_identifiers",
 }
+
+# MCP branch name → short ID of the branch's root concept (folio-python FOLIO_TYPE_IRIS)
+BRANCH_ROOT_IDS = {
+    "actors_players": "R8CdMpOM0RmyrgCCvbpiLS0",
+    "areas_of_law": "RSYBzf149Mi5KE0YtmpUmr",
+    "asset_types": "RCIwc6WJi6IT7xePURxsi4T",
+    "communication_modalities": "R8qItBwG2pRMFhUq1HQEMnb",
+    "currencies": "R767niCLQVC5zIcO5WDQMSl",
+    "data_formats": "R79aItNTJQwHgR002wuX3iC",
+    "document_artifacts": "RDt4vQCYDfY0R9fZ5FNnTbj",
+    "engagement_terms": "R9kmGZf5FSmFdouXWQ1Nndm",
+    "events": "R73hoH1RXYjBTYiGfolpsAF",
+    "forum_venues": "RBjHwNNG2ASVmasLFU42otk",
+    "governmental_bodies": "RBQGborh1CfXanGZipDL0Qo",
+    "industries": "RDIwFaFcH4KY0gwEY0QlMTp",
+    "languages": "RDOvAHsvY8TKJ1O1orXPM9o",
+    "folio_types": "R8uI6AZ9vSgpAdKmfGZKfTZ",
+    "legal_authorities": "RC1CZydjfH8oiM4W3rCkma3",
+    "legal_entities": "R7L5eLIzH0CpOUE74uJvSjL",
+    "locations": "R9aSzp9cEiBCzObnP92jYFX",
+    "matter_narratives": "R7ReDY2v13rer1U8AyOj55L",
+    "matter_narrative_formats": "R8ONVC8pLVJC5dD4eKqCiZL",
+    "objectives": "RlNFgB3TQfMzV26V4V7u4E",
+    "services": "RDK1QEdQg1T8B5HQqMK2pZN",
+    "standards_compatibilities": "RB4cFSLB4xvycDlKv73dOg6",
+    "statuses": "Rx69EnEj3H3TpcgTfUSoYx",
+    "system_identifiers": "R8EoZh39tWmXCkmP2Xzjl6E",
+}
+
+# MCP branch name → label of the branch's root concept
+BRANCH_LABELS = {
+    "actors_players": "Actor / Player",
+    "areas_of_law": "Area of Law",
+    "asset_types": "Asset Type",
+    "communication_modalities": "Communication Modality",
+    "currencies": "Currency",
+    "data_formats": "Data Format",
+    "document_artifacts": "Document / Artifact",
+    "engagement_terms": "Engagement Terms",
+    "events": "Event",
+    "forum_venues": "Forums and Venues",
+    "governmental_bodies": "Governmental Body",
+    "industries": "Industry",
+    "languages": "Language",
+    "folio_types": "FOLIO Type",
+    "legal_authorities": "Legal Authorities",
+    "legal_entities": "Legal Entity",
+    "locations": "Location",
+    "matter_narratives": "Matter Narrative",
+    "matter_narrative_formats": "Matter Narrative Format",
+    "objectives": "Objectives",
+    "services": "Service",
+    "standards_compatibilities": "Standards Compatibility",
+    "statuses": "Status",
+    "system_identifiers": "System Identifiers",
+}
+
+# Extra spellings LLMs and users commonly reach for.
+_BRANCH_EXTRA_ALIASES = {
+    "practice_area": "areas_of_law",
+    "practice_areas": "areas_of_law",
+    "legal_areas": "areas_of_law",
+    "document_types": "document_artifacts",
+    "documents": "document_artifacts",
+    "actors": "actors_players",
+    "players": "actors_players",
+    "roles": "actors_players",
+    "forums": "forum_venues",
+    "venues": "forum_venues",
+    "government_bodies": "governmental_bodies",
+    "assets": "asset_types",
+    "jurisdictions": "locations",
+    "sectors": "industries",
+}
+
+_STOP_TOKENS = {"and", "the"}
+
+
+def _branch_key(text: str) -> str:
+    """Normalize a branch spelling: lowercase alphanumerics, minus filler words."""
+    import re
+
+    tokens = re.findall(r"[a-z0-9]+", text.lower())
+    return "".join(t for t in tokens if t not in _STOP_TOKENS)
+
+
+def _build_branch_aliases() -> dict:
+    aliases = {}
+    for name in BRANCH_NAMES:
+        for spelling in (name, BRANCH_API_PATHS[name], BRANCH_LABELS[name]):
+            aliases[_branch_key(spelling)] = name
+    for spelling, name in _BRANCH_EXTRA_ALIASES.items():
+        aliases[_branch_key(spelling)] = name
+    return aliases
+
+
+_BRANCH_ALIASES = _build_branch_aliases()
+
+
+def resolve_branch_name(text) -> "str | None":
+    """Map any reasonable branch spelling to its canonical MCP branch name.
+
+    Accepts the canonical name ("areas_of_law"), folio-python enum names
+    ("AREA_OF_LAW"), root-concept labels ("Area of Law", "Forums and Venues"),
+    and a few common aliases ("practice areas"). Returns None if unknown.
+    """
+    if not isinstance(text, str) or not text.strip():
+        return None
+    key = _branch_key(text)
+    if key in _BRANCH_ALIASES:
+        return _BRANCH_ALIASES[key]
+    if key.endswith("s") and key[:-1] in _BRANCH_ALIASES:
+        return _BRANCH_ALIASES[key[:-1]]
+    if key + "s" in _BRANCH_ALIASES:
+        return _BRANCH_ALIASES[key + "s"]
+    return None
