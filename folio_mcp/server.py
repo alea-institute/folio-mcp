@@ -547,7 +547,10 @@ async def query_properties(
 
 @mcp.tool()
 async def search_expanded(
-    ctx: Context, query: str, limit: int = 10, include_definitions: bool = False
+    ctx: Context,
+    query: str,
+    limit: int = DEFAULT_SEARCH_LIMIT,
+    include_definitions: bool = False,
 ) -> str:
     """Search FOLIO with a plain-English question or fact pattern.
 
@@ -561,14 +564,20 @@ async def search_expanded(
 
     Args:
         query: Natural-language description (e.g., "fired for reporting safety violations").
-        limit: Maximum number of results to return (default 10).
+        limit: Maximum results (default 10, max 50).
         include_definitions: Also match concept definitions (default false).
 
     Returns:
         JSON object: query, expansions, expansion_source ("llm", "cache" or "none"),
         and results [{iri, label, definition, score, matched_via}].
     """
-    return await _get_backend(ctx).search_expanded(query, limit, include_definitions)
+    invalid = validate_query(query, "search_expanded")
+    if invalid:
+        return invalid
+    limit = clamp(limit, 1, MAX_SEARCH_LIMIT, DEFAULT_SEARCH_LIMIT)
+    return await _get_backend(ctx).search_expanded(
+        query.strip(), limit, bool(include_definitions)
+    )
 
 # ── Resources ──────────────────────────────────────────────────────────
 

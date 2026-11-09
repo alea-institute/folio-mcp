@@ -145,3 +145,23 @@ async def test_search_expanded_tool_registered():
     description = tools["search_expanded"].description
     assert "natural-language" in description
     assert "search_concepts" in description
+
+
+@pytest.mark.asyncio
+async def test_search_expanded_tool_end_to_end(monkeypatch):
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    from folio_mcp import server
+
+    folio = ExpandingFolio()
+    monkeypatch.setattr(server, "_shared_backend", LocalBackend(folio))
+    async with create_connected_server_and_client_session(server.mcp._mcp_server) as client:
+        ok = await client.call_tool(
+            "search_expanded", {"query": "  my landlord won't fix the heat ", "limit": 100000}
+        )
+        bad = await client.call_tool("search_expanded", {"query": " "})
+    payload = json.loads(ok.content[0].text)
+    assert not ok.isError
+    assert payload["results"][0]["iri"] == IRI
+    assert folio.calls == [("my landlord won't fix the heat", 50, False)]
+    assert "error" in json.loads(bad.content[0].text)
