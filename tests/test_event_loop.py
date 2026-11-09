@@ -5,6 +5,15 @@ folio-api mounts this server in-process on a single uvicorn worker, so a
 synchronous ontology search run directly inside an ``async def`` stalls every
 other MCP session, REST request, health check and SSE stream until it ends.
 These tests use a stub graph whose calls block, so they need no ontology.
+
+Limitation: the stub blocks with time.sleep, which releases the GIL. The real
+label/definition searches spend their time in rapidfuzz.process.extract, a
+single C call that holds the GIL, so for those two tools the offload does
+NOT free the event loop (measured: ~2.9 s worst stall for 20 searches either
+way). These tests cover the pure-Python tools (query_concepts, traversals)
+and guard against regressing to inline calls. Freeing the loop during fuzzy
+search needs a GIL-releasing search in folio-python, e.g.
+rapidfuzz.process.cdist(..., workers=N).
 """
 
 import asyncio

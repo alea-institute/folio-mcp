@@ -82,3 +82,31 @@ async def test_new_backend_after_all_sessions_end(stub_api_backend):
     async with server.app_lifespan(None) as second:
         assert second["backend"] is not first["backend"]
         assert second["backend"].closed == 0
+
+
+@pytest.mark.asyncio
+async def test_cancelled_session_still_releases_owned_backend(stub_api_backend):
+    """A session cancelled mid-flight (idle timeout, shutdown) must release its ref.
+
+    Without shielding, the lock acquire in the lifespan's finally raises the
+    cancellation first, so the count never reaches zero and the backend is
+    never closed; the next session then reuses the stale backend.
+    """
+    import anyio
+
+    entered = anyio.Event()
+
+    async def session():
+        async with server.app_lifespan(None):
+            entered.set()
+            await anyio.sleep_forever()
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(session)
+        await entered.wait()
+        tg.cancel_scope.cancel()
+
+    backend = stub_api_backend.instances[0]
+    assert server._owned_refs == 0
+    assert server._owned_backend is None
+    assert backend.closed == 1
