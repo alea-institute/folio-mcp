@@ -403,3 +403,34 @@ class APIBackend:
             }, indent=2)
         except httpx.HTTPError as e:
             return _api_error(e)
+
+    async def search_expanded(
+        self, query: str, limit: int, include_definitions: bool = False
+    ) -> str:
+        try:
+            resp = await self._get(
+                "/search/llm/expanded",
+                query=query,
+                limit=limit,
+                include_definitions=str(include_definitions).lower(),
+            )
+            data = resp.json()
+            results = []
+            for hit in data.get("results", []):
+                cls_data = hit.get("owl_class") or {}
+                results.append({
+                    "iri": cls_data.get("iri", ""),
+                    "label": cls_data.get("label", ""),
+                    "definition": cls_data.get("definition"),
+                    "score": hit.get("score"),
+                    "matched_via": hit.get("matched_via", []),
+                })
+            return json.dumps({
+                "query": data.get("query", query),
+                "expansions": data.get("expansions", []),
+                "expansion_source": data.get("expansion_source", "none"),
+                "results": results,
+            }, indent=2)
+        except httpx.HTTPError as e:
+            return _api_error(e)
+

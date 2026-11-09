@@ -544,6 +544,32 @@ async def query_properties(
     return shape_list(raw, limit=limit)
 
 
+
+@mcp.tool()
+async def search_expanded(
+    ctx: Context, query: str, limit: int = 10, include_definitions: bool = False
+) -> str:
+    """Search FOLIO with a plain-English question or fact pattern.
+
+    An LLM rewrites the query into synonyms and legal terms of art (e.g.
+    "my landlord won't fix the heat" -> "Implied Warranty of Habitability",
+    "Constructive Eviction"), searches each, and merges the results by rank.
+    Use this for natural-language or situational queries; use search_concepts
+    when you already know the concept's name. The first call for a query takes
+    a few seconds; repeats are cached. If the LLM is unavailable it returns
+    plain label-search results with an empty expansions list.
+
+    Args:
+        query: Natural-language description (e.g., "fired for reporting safety violations").
+        limit: Maximum number of results to return (default 10).
+        include_definitions: Also match concept definitions (default false).
+
+    Returns:
+        JSON object: query, expansions, expansion_source ("llm", "cache" or "none"),
+        and results [{iri, label, definition, score, matched_via}].
+    """
+    return await _get_backend(ctx).search_expanded(query, limit, include_definitions)
+
 # ── Resources ──────────────────────────────────────────────────────────
 
 
