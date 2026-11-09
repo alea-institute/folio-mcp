@@ -14,6 +14,8 @@ dependencies = [
 
 [project.optional-dependencies]
 local = ["folio-python[search]>=0.3.3"]
+# Optional extract_citations tool; kaos-citations needs Python >= 3.13.
+kaos = ["kaos-citations>=0.1.7; python_version >= '3.13'"]
 
 [project.scripts]
 folio-mcp = "folio_mcp.server:main"

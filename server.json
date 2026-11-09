@@ -38,7 +38,8 @@
     "get_properties",
     "find_connections",
     "query_concepts",
-    "query_properties"
+    "query_properties",
+    "extract_concepts"
   ],
   "resources": [
     "folio://branches",

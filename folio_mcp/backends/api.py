@@ -5,14 +5,18 @@ Default backend for instant startup with no local ontology loading.
 """
 
 # imports
+import asyncio
 import json
 from typing import Optional
 
 # packages
+import anyio
+import anyio.to_thread
 import httpx
 
 # project
 from folio_mcp.backends._branch_data import BRANCH_API_PATHS, BRANCH_NAMES
+from folio_mcp.tagger import SKIP_BRANCHES, ConceptTagger
 
 
 def _summary_class(d: dict) -> dict:
@@ -93,6 +97,8 @@ class APIBackend:
     def __init__(self, base_url: str = "https://folio.openlegalstandard.org"):
         self.base_url = base_url.rstrip("/")
         self._client: Optional[httpx.AsyncClient] = None
+        self._tagger: Optional[ConceptTagger] = None
+        self._tagger_lock = anyio.Lock()
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None:
@@ -340,6 +346,34 @@ class APIBackend:
             return json.dumps([_compact_property(p) for p in props], indent=2)
         except httpx.HTTPError as e:
             return json.dumps({"error": f"API error: {e}"})
+
+    async def _get_tagger(self) -> ConceptTagger:
+        """Build the label dictionary once from the taxonomy endpoints (~1-2s)."""
+        async with self._tagger_lock:
+            if self._tagger is None:
+                branches = [b for b in BRANCH_NAMES if b not in SKIP_BRANCHES]
+
+                async def fetch(branch_name: str) -> list:
+                    resp = await self._get(f"/taxonomy/{BRANCH_API_PATHS[branch_name]}", max_depth=16)
+                    return [{**c, "branch": branch_name} for c in resp.json().get("classes", [])]
+
+                # gather keeps BRANCH_NAMES order, so each concept keeps its first
+                # branch as in local mode; a failed request re-raises here.
+                per_branch = await asyncio.gather(*(fetch(b) for b in branches))
+                records: dict = {}
+                for batch in per_branch:
+                    for rec in batch:
+                        records.setdefault(rec.get("iri"), rec)
+                self._tagger = await anyio.to_thread.run_sync(ConceptTagger, list(records.values()))
+            return self._tagger
+
+    async def extract_concepts(self, text: str, limit: int, branch: Optional[str]) -> str:
+        try:
+            tagger = await self._get_tagger()
+        except (httpx.HTTPError, ValueError) as e:
+            return json.dumps({"error": f"API error while loading concept labels: {e}"})
+        concepts = await anyio.to_thread.run_sync(lambda: tagger.tag(text, limit=limit, branch=branch))
+        return json.dumps({"count": len(concepts), "concepts": concepts}, indent=2)
 
     async def get_branches_resource(self) -> str:
         return await self.list_branches()

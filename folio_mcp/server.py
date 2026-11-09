@@ -417,6 +417,79 @@ async def query_properties(
     )
 
 
+# Pasted documents can be long; cap the work one call can trigger.
+MAX_EXTRACT_CHARS = 100_000
+
+
+@mcp.tool()
+async def extract_concepts(ctx: Context, text: str, limit: int = 50, branch: Optional[str] = None) -> str:
+    """Tag a passage of text with the FOLIO concepts it mentions.
+
+    Paste a fact pattern, clause, email, or brief excerpt; returns every FOLIO
+    concept whose label or synonym appears in it (e.g., "tenant", "eviction",
+    "temporary restraining order", "Bankruptcy Court", "EEOC"), with its
+    branch. Dictionary matching, not inference: use it as a fast first pass,
+    then get_concept(iri) or the classification prompts for judgment calls.
+    The first call builds the label index (about 2s).
+
+    Args:
+        text: The text to tag (up to 100,000 characters).
+        limit: Maximum concepts to return, in order of first mention (default 50).
+        branch: Optional branch filter, e.g. "areas_of_law", "document_artifacts",
+            "actors_players", "forum_venues" (see list_branches).
+
+    Returns:
+        JSON {"count", "concepts": [{iri, label, branch, match_type,
+        matched_text, count, first_offset}]}.
+    """
+    if branch is not None and branch not in BRANCH_NAMES:
+        return json.dumps({"error": f"Unknown branch: {branch}", "available_branches": BRANCH_NAMES})
+    if len(text) > MAX_EXTRACT_CHARS:
+        return json.dumps({
+            "error": f"Text is {len(text)} characters; the limit is {MAX_EXTRACT_CHARS}.",
+            "hint": "Split the document and call extract_concepts on each part.",
+        })
+    return await _get_backend(ctx).extract_concepts(text, max(1, limit), branch)
+
+
+def _register_citation_tool() -> None:
+    """Register extract_citations only when the optional kaos extra is installed."""
+    from folio_mcp.citations import citations_available, extract_citations as _extract
+
+    if not citations_available():
+        return
+
+    @mcp.tool()
+    async def extract_citations(text: str, limit: int = 100) -> str:
+        """Find legal citations in text and map each to FOLIO concepts.
+
+        Recognizes case law, U.S.C. and state statutes, C.F.R., Federal Register,
+        federal rules (FRCP, FRE, ...), constitutions, executive orders,
+        public laws, restatements, sentencing guidelines and more. Each citation
+        gets its FOLIO legal authority type (e.g., "U.S. Code", "Federal Rules
+        of Civil Procedure", "Caselaw and Common Law") and, for federal
+        appellate and Supreme Court cases, the FOLIO court (forum) concept.
+
+        Args:
+            text: Text containing citations (up to 100,000 characters).
+            limit: Maximum citations to return (default 100).
+
+        Returns:
+            JSON {"count", "citations": [{text, kind, start, end, case_name?,
+            folio_authority?: {iri, label}, folio_forum?: {iri, label}}]}.
+        """
+        if len(text) > MAX_EXTRACT_CHARS:
+            return json.dumps({
+                "error": f"Text is {len(text)} characters; the limit is {MAX_EXTRACT_CHARS}.",
+                "hint": "Split the document and call extract_citations on each part.",
+            })
+        result = await anyio.to_thread.run_sync(lambda: _extract(text, max(1, limit)))
+        return json.dumps(result, indent=2)
+
+
+_register_citation_tool()
+
+
 # ── Resources ──────────────────────────────────────────────────────────
 
 
