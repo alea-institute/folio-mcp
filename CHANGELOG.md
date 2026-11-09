@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `extract_concepts(text, limit, branch)` tool: tags pasted text with the FOLIO concepts it mentions by greedy longest-match over labels, preferred labels and alternative labels (standard library only; works in API and local mode). On 14 lawyer-style paragraphs plus 7 held-out ones it returned 185 concepts with roughly 90-95% judged correct, at well under 1 ms per paragraph.
+- Optional `kaos` extra (`kaos-citations`, Python >= 3.13) that registers an `extract_citations(text, limit)` tool mapping each citation to its FOLIO legal authority type and court.
+
 ## 0.4.4 (2026-11-09)
 
 First PyPI release since 0.4.1. It also includes 0.4.2 and 0.4.3 below, which were never published. `uvx folio-mcp` works again with current `mcp` releases.

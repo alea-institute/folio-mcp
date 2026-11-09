@@ -17,6 +17,7 @@ from folio import FOLIO, OWLClass, OWLObjectProperty
 
 # project
 from folio_mcp.backends._branch_data import BRANCH_METHODS, BRANCH_NAMES
+from folio_mcp.tagger import ConceptTagger
 
 
 def resolve_iri(folio: FOLIO, iri: str) -> Tuple[Optional[OWLClass | OWLObjectProperty], Optional[str]]:
@@ -203,6 +204,8 @@ class LocalBackend:
     def __init__(self, folio: Optional[FOLIO] = None):
         self._folio = folio
         self._load_lock = threading.Lock()
+        self._tagger: Optional[ConceptTagger] = None
+        self._tagger_lock = threading.Lock()
 
     @property
     def folio(self) -> FOLIO:
@@ -377,6 +380,33 @@ class LocalBackend:
             limit=limit,
         )
         return json.dumps([owl_property_to_dict(p) for p in results], indent=2)
+
+    def _get_tagger(self) -> ConceptTagger:
+        if self._tagger is None:
+            with self._tagger_lock:
+                if self._tagger is None:
+                    folio = self.folio
+                    iri_branch: dict = {}
+                    for branch_name, method_name in BRANCH_METHODS.items():
+                        for c in getattr(folio, method_name)(max_depth=16):
+                            iri_branch.setdefault(c.iri, branch_name)
+                    self._tagger = ConceptTagger(
+                        {
+                            "iri": c.iri,
+                            "label": c.label,
+                            "preferred_label": c.preferred_label,
+                            "alternative_labels": c.alternative_labels,
+                            "deprecated": c.deprecated,
+                            "branch": iri_branch.get(c.iri),
+                        }
+                        for c in folio.classes
+                    )
+        return self._tagger
+
+    @_in_thread
+    def extract_concepts(self, text: str, limit: int, branch: Optional[str]) -> str:
+        concepts = self._get_tagger().tag(text, limit=limit, branch=branch)
+        return json.dumps({"count": len(concepts), "concepts": concepts}, indent=2)
 
     async def get_branches_resource(self) -> str:
         return await self.list_branches()

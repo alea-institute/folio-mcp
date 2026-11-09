@@ -116,7 +116,7 @@ pip install folio-mcp
 folio-mcp
 ```
 
-## Tools (12)
+## Tools (13, plus 1 optional)
 
 | Tool | Description |
 |------|-------------|
@@ -132,6 +132,14 @@ folio-mcp
 | `get_parents(iri, max_depth)` | Get parent concepts |
 | `get_properties()` | List all OWL object properties (iri, label, short definition) |
 | `find_connections(subject_iri, property_name, object_iri)` | Find semantic triples |
+| `extract_concepts(text, limit=50, branch=None)` | Tag pasted text with the FOLIO concepts it mentions (label/synonym dictionary match; first call builds the index in ~1s) |
+| `extract_citations(text, limit=100)` | *Optional, needs the `kaos` extra on Python 3.13+.* Find legal citations (cases, U.S.C., C.F.R., federal rules, ...) and map each to its FOLIO legal authority type and, for federal appellate/Supreme Court cases, the court |
+
+`extract_citations` is registered only when [kaos-citations](https://pypi.org/project/kaos-citations/) is installed:
+
+```bash
+uvx --python 3.13 --from 'folio-mcp[kaos]' folio-mcp
+```
 
 Browse operations return compact summaries (iri, label, definition). Use `get_concept(iri)` for full details including translations (31% of concepts, 10+ languages), preferred labels, external identifiers, and cross-references.
 
