@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Bad inputs no longer crash or return junk.** `search_concepts(limit=-5)` raised a C++ `vector::_M_default_append` tool error; `get_concept("")` returned an arbitrary concept (local) or the 33 KB site home page (API); `query_concepts`/`query_properties` with an invalid regex raised; an unknown `match_mode` or branch silently returned `[]`. All now return `{"error", "hint"}`.
+- **Limits are honoured and capped.** Search results are cut to `limit` (folio-python and the REST API both returned more), `limit` is capped (search 50, query 100; 0 or negative uses the default) and `max_depth` is clamped to 1..3 for all traversal tools. `search_concepts(limit=100000)` returned 6 MB.
+- **Large browse results are bounded.** Lists over 100 items return `{results, truncated, total, note}`; `get_taxonomy_branch("locations", max_depth=99)` went from 573 KB to 15 KB.
+- `get_parents` no longer lists the concept itself (local) or `owl:Thing` (API).
+- API mode: `get_children`/`get_parents` now honour `max_depth`; errors are short (`FOLIO API error (HTTP 500)`, `Concept not found: X`) instead of httpx messages with URLs and MDN links.
+- Local IRI resolution no longer suffix-matches fragments such as `""` or `"A"` to random concepts.
+
+### Changed
+
+- **Branch names are accepted everywhere.** `"Areas of Law"`, `"AREA_OF_LAW"`, `"practice areas"` work in `get_taxonomy_branch` and `query_concepts(branch=...)`; branch names passed as an IRI (`get_children("areas_of_law")`) resolve to the branch root concept.
+- **Compact output.** JSON is unindented with UTF-8 kept; `"NULL"` placeholder definitions and empty fields are dropped; list views shorten definitions to 300 characters (`get_concept` keeps full text). `get_properties` returns iri/label/short definition (81 KB to 30 KB); use `query_properties` for domain/range.
+- `find_connections` explains empty results: FOLIO records only ~29 property triples.
+- Tool descriptions and server instructions now steer clients to `search_concepts` first, mark `search_definitions` as a loose fallback, and use property examples that exist (`folio:advised`, `folio:drafted`). `classify-document` no longer claims 8 top-level document categories (there are 7).
+
 ## 0.4.3 (2026-11-09)
 
 ### Fixed
