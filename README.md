@@ -120,8 +120,8 @@ folio-mcp
 
 | Tool | Description |
 |------|-------------|
-| `search_concepts(query, limit=10)` | Search concepts by label/name using fuzzy matching |
-| `search_definitions(query, limit=10)` | Search concepts by definition text |
+| `search_concepts(query, limit=10)` | Search concepts by label/name using fuzzy matching (start here; max 50) |
+| `search_definitions(query, limit=10)` | Loose fuzzy search over definition text (fallback) |
 | `query_concepts(...)` | Advanced query with composable text and structural filters |
 | `query_properties(...)` | Query OWL object properties by label, domain, range |
 | `get_concept(iri)` | Get full details for a concept by IRI |
@@ -130,7 +130,7 @@ folio-mcp
 | `get_taxonomy_branch(branch_name, max_depth)` | Get concepts in a taxonomy branch |
 | `get_children(iri, max_depth)` | Get child concepts |
 | `get_parents(iri, max_depth)` | Get parent concepts |
-| `get_properties()` | Get all OWL object properties (relationships) |
+| `get_properties()` | List all OWL object properties (iri, label, short definition) |
 | `find_connections(subject_iri, property_name, object_iri)` | Find semantic triples |
 | `extract_concepts(text, limit=50, branch=None)` | Tag pasted text with the FOLIO concepts it mentions (label/synonym dictionary match; first call builds the index in ~1s) |
 | `extract_citations(text, limit=100)` | *Optional, needs the `kaos` extra on Python 3.13+.* Find legal citations (cases, U.S.C., C.F.R., federal rules, ...) and map each to its FOLIO legal authority type and, for federal appellate/Supreme Court cases, the court |

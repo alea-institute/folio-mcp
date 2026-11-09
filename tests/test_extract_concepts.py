@@ -220,3 +220,24 @@ class TestExtractConceptsTool:
     async def test_tool_is_registered(self):
         names = {t.name for t in await server.mcp.list_tools()}
         assert "extract_concepts" in names
+
+    async def test_empty_text_is_an_error(self):
+        stub = _StubBackend()
+        for text in ("", "   \n"):
+            out = json.loads(await server.extract_concepts(_ctx(stub), text))
+            assert "error" in out and "hint" in out
+        assert stub.calls == []
+
+    async def test_branch_aliases_resolve_like_other_tools(self):
+        stub = _StubBackend()
+        for alias in ("Areas of Law", "AREA_OF_LAW", "areas_of_law"):
+            out = json.loads(await server.extract_concepts(_ctx(stub), "text", branch=alias))
+            assert out == {"count": 0, "concepts": []}, alias
+        assert {call[2] for call in stub.calls} == {"areas_of_law"}
+
+    async def test_limit_is_clamped(self):
+        stub = _StubBackend()
+        # same convention as the other tools: 0 or negative uses the default
+        for limit, expected in ((-5, 50), (0, 50), (3, 3), (10**6, server.MAX_EXTRACT_LIMIT)):
+            await server.extract_concepts(_ctx(stub), "text", limit=limit)
+            assert stub.calls[-1][1] == expected, limit

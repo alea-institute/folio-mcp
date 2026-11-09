@@ -91,6 +91,31 @@ def _extract_iri_id(iri: str) -> str:
     return iri
 
 
+def _api_error(exc: Exception, not_found: Optional[str] = None) -> str:
+    """Short, LLM-friendly error JSON for an httpx failure (no URLs or stack details)."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        if status == 404 and not_found is not None:
+            return json.dumps({"error": f"Concept not found: {not_found}"})
+        if status == 429:
+            return json.dumps({"error": "FOLIO API rate limit reached (HTTP 429). Retry shortly."})
+        return json.dumps({"error": f"FOLIO API error (HTTP {status})"})
+    if isinstance(exc, httpx.TimeoutException):
+        return json.dumps({"error": "FOLIO API request timed out. Retry shortly."})
+    if isinstance(exc, _NotJSONError):
+        return json.dumps({"error": f"Concept not found: {not_found}"} if not_found is not None
+                          else {"error": "Unexpected non-JSON response from the FOLIO API"})
+    return json.dumps({"error": f"Could not reach the FOLIO API: {type(exc).__name__}"})
+
+
+class _NotJSONError(httpx.HTTPError):
+    """The API answered with an HTML page (e.g. the site home page for an empty IRI)."""
+
+
+# Cap on node requests for multi-level traversal in API mode.
+_MAX_TRAVERSAL_REQUESTS = 60
+
+
 class APIBackend:
     """Backend that calls the public FOLIO REST API via httpx."""
 
@@ -114,17 +139,14 @@ class APIBackend:
             await self._client.aclose()
             self._client = None
 
-    async def _get(self, path: str, **params) -> httpx.Response:
-        """Make a GET request, returning the response."""
+    async def _get(self, path: str, _expect_json: bool = True, **params) -> httpx.Response:
+        """Make a GET request, raising httpx errors (incl. _NotJSONError for HTML pages)."""
         client = await self._get_client()
-        try:
-            resp = await client.get(path, params=params)
-            resp.raise_for_status()
-            return resp
-        except httpx.HTTPStatusError as e:
-            raise e
-        except httpx.HTTPError as e:
-            raise e
+        resp = await client.get(path, params=params)
+        resp.raise_for_status()
+        if _expect_json and "html" in resp.headers.get("content-type", ""):
+            raise _NotJSONError(f"HTML response for {path}")
+        return resp
 
     async def search_by_label(self, query: str, limit: int) -> str:
         try:
@@ -143,7 +165,7 @@ class APIBackend:
                     })
             return json.dumps(formatted, indent=2)
         except httpx.HTTPError as e:
-            return json.dumps({"error": f"API error: {e}"})
+            return _api_error(e)
 
     async def search_by_definition(self, query: str, limit: int) -> str:
         try:
@@ -162,19 +184,17 @@ class APIBackend:
                     })
             return json.dumps(formatted, indent=2)
         except httpx.HTTPError as e:
-            return json.dumps({"error": f"API error: {e}"})
+            return _api_error(e)
 
     async def get_concept(self, iri: str) -> str:
-        iri_id = _extract_iri_id(iri)
+        iri_id = _extract_iri_id(iri.strip())
+        if not iri_id:
+            return json.dumps({"error": "iri is required"})
         try:
             resp = await self._get(f"/{iri_id}")
             return resp.text
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                return json.dumps({"error": f"Concept not found: {iri}"})
-            return json.dumps({"error": f"API error: {e.response.status_code}"})
         except httpx.HTTPError as e:
-            return json.dumps({"error": f"API error: {e}"})
+            return _api_error(e, not_found=iri)
 
     async def export_concept(self, iri: str, fmt: str) -> str:
         iri_id = _extract_iri_id(iri)
@@ -187,22 +207,20 @@ class APIBackend:
         if path_suffix is None:
             return json.dumps({"error": f"Unsupported format: {fmt}. Use 'markdown', 'jsonld', or 'owl_xml'."})
 
+        if not iri_id:
+            return json.dumps({"error": "iri is required"})
         try:
-            resp = await self._get(f"/{iri_id}/{path_suffix}")
+            resp = await self._get(f"/{iri_id}/{path_suffix}", _expect_json=False)
             return resp.text
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                return json.dumps({"error": f"Concept not found: {iri}"})
-            return json.dumps({"error": f"API error: {e.response.status_code}"})
         except httpx.HTTPError as e:
-            return json.dumps({"error": f"API error: {e}"})
+            return _api_error(e, not_found=iri)
 
     async def list_branches(self) -> str:
         try:
             resp = await self._get("/taxonomy/branches")
             return resp.text
         except httpx.HTTPError as e:
-            return json.dumps({"error": f"API error: {e}"})
+            return _api_error(e)
 
     async def get_taxonomy_branch(self, branch_name: str, max_depth: int) -> str:
         if branch_name not in BRANCH_API_PATHS:
@@ -218,27 +236,56 @@ class APIBackend:
             classes = data.get("classes", [])
             return json.dumps([_summary_class(c) for c in classes], indent=2)
         except httpx.HTTPError as e:
-            return json.dumps({"error": f"API error: {e}"})
+            return _api_error(e)
+
+    async def _traverse(self, iri: str, max_depth: int, direction: str) -> str:
+        """Breadth-first walk over /taxonomy/tree/node for children or parents.
+
+        Mirrors folio-python's get_children/get_parents: a flat list of every
+        concept within max_depth levels, nearest level first.
+        """
+        iri_id = _extract_iri_id(iri.strip())
+        if not iri_id:
+            return json.dumps({"error": "iri is required"})
+        try:
+            resp = await self._get(f"/taxonomy/tree/node/{iri_id}")
+            frontier = resp.json().get(direction, [])
+        except httpx.HTTPError as e:
+            return _api_error(e, not_found=iri)
+
+        results, seen = [], set()
+        requests = 1
+        for depth in range(1, max(1, max_depth) + 1):
+            level = [c for c in frontier if c.get("iri") and c["iri"] not in seen]
+            for item in level:
+                seen.add(item["iri"])
+                results.append(_summary_class(item))
+            if depth == max_depth or not level or requests >= _MAX_TRAVERSAL_REQUESTS:
+                break
+            level = level[: _MAX_TRAVERSAL_REQUESTS - requests]
+            requests += len(level)
+            expanded: list = [[] for _ in level]
+            limiter = anyio.Semaphore(8)
+
+            async def expand(index: int, item: dict) -> None:
+                async with limiter:
+                    try:
+                        r = await self._get(f"/taxonomy/tree/node/{_extract_iri_id(item['iri'])}")
+                        expanded[index] = r.json().get(direction, [])
+                    except httpx.HTTPError:
+                        pass
+
+            async with anyio.create_task_group() as tg:
+                for index, item in enumerate(level):
+                    tg.start_soon(expand, index, item)
+            frontier = [c for group in expanded for c in group]
+        return json.dumps(results)
 
     async def get_children(self, iri: str, max_depth: int) -> str:
-        iri_id = _extract_iri_id(iri)
-        try:
-            resp = await self._get(f"/taxonomy/tree/node/{iri_id}")
-            data = resp.json()
-            children = data.get("children", [])
-            return json.dumps([_summary_class(c) for c in children], indent=2)
-        except httpx.HTTPError as e:
-            return json.dumps({"error": f"API error: {e}"})
+        return await self._traverse(iri, max_depth, "children")
 
     async def get_parents(self, iri: str, max_depth: int) -> str:
-        iri_id = _extract_iri_id(iri)
-        try:
-            resp = await self._get(f"/taxonomy/tree/node/{iri_id}")
-            data = resp.json()
-            parents = data.get("parents", [])
-            return json.dumps([_summary_class(c) for c in parents], indent=2)
-        except httpx.HTTPError as e:
-            return json.dumps({"error": f"API error: {e}"})
+        return await self._traverse(iri, max_depth, "parents")
 
     async def get_properties(self) -> str:
         try:
@@ -247,7 +294,7 @@ class APIBackend:
             props = data.get("properties", [])
             return json.dumps([_compact_property(p) for p in props], indent=2)
         except httpx.HTTPError as e:
-            return json.dumps({"error": f"API error: {e}"})
+            return _api_error(e)
 
     async def find_connections(
         self,
@@ -263,12 +310,8 @@ class APIBackend:
         try:
             resp = await self._get("/connections", **params)
             return resp.text
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                return json.dumps({"error": f"Subject not found: {subject_iri}"})
-            return json.dumps({"error": f"API error: {e.response.status_code}"})
         except httpx.HTTPError as e:
-            return json.dumps({"error": f"API error: {e}"})
+            return _api_error(e, not_found=subject_iri)
 
     async def query_concepts(
         self,
@@ -314,7 +357,7 @@ class APIBackend:
             classes = data.get("classes", [])
             return json.dumps([_summary_class(c) for c in classes], indent=2)
         except httpx.HTTPError as e:
-            return json.dumps({"error": f"API error: {e}"})
+            return _api_error(e)
 
     async def query_properties(
         self,
@@ -345,7 +388,7 @@ class APIBackend:
             props = data.get("properties", [])
             return json.dumps([_compact_property(p) for p in props], indent=2)
         except httpx.HTTPError as e:
-            return json.dumps({"error": f"API error: {e}"})
+            return _api_error(e)
 
     async def _get_tagger(self) -> ConceptTagger:
         """Build the label dictionary once from the taxonomy endpoints (~1-2s)."""
@@ -392,4 +435,35 @@ class APIBackend:
                 "license": "CC-BY 4.0",
             }, indent=2)
         except httpx.HTTPError as e:
-            return json.dumps({"error": f"API error: {e}"})
+            return _api_error(e)
+
+    async def search_expanded(
+        self, query: str, limit: int, include_definitions: bool = False
+    ) -> str:
+        try:
+            resp = await self._get(
+                "/search/llm/expanded",
+                query=query,
+                limit=limit,
+                include_definitions=str(include_definitions).lower(),
+            )
+            data = resp.json()
+            results = []
+            for hit in data.get("results", []):
+                cls_data = hit.get("owl_class") or {}
+                results.append({
+                    "iri": cls_data.get("iri", ""),
+                    "label": cls_data.get("label", ""),
+                    "definition": cls_data.get("definition"),
+                    "score": hit.get("score"),
+                    "matched_via": hit.get("matched_via", []),
+                })
+            return json.dumps({
+                "query": data.get("query", query),
+                "expansions": data.get("expansions", []),
+                "expansion_source": data.get("expansion_source", "none"),
+                "results": results,
+            }, indent=2)
+        except httpx.HTTPError as e:
+            return _api_error(e)
+
