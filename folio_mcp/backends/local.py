@@ -159,6 +159,25 @@ def format_search_results(results: List[Tuple[OWLClass, int | float]]) -> str:
     return json.dumps(formatted, indent=2)
 
 
+def format_expanded_results(result: Any) -> str:
+    """Format a folio-python ``ExpandedSearchResult`` as a JSON string."""
+    return json.dumps({
+        "query": result.query,
+        "expansions": list(result.expansions),
+        "expansion_source": result.expansion_source,
+        "results": [
+            {
+                "iri": hit.owl_class.iri,
+                "label": hit.owl_class.label,
+                "definition": hit.owl_class.definition,
+                "score": round(hit.score, 6),
+                "matched_via": list(hit.matched_via),
+            }
+            for hit in result.hits
+        ],
+    }, indent=2)
+
+
 _T = TypeVar("_T")
 
 
@@ -373,3 +392,32 @@ class LocalBackend:
             "source": "https://openlegalstandard.org/",
             "license": "CC-BY 4.0",
         }, indent=2)
+
+    async def search_expanded(
+        self, query: str, limit: int, include_definitions: bool = False
+    ) -> str:
+        """LLM query expansion + rank fusion via ``FOLIO.search_expanded``.
+
+        Never blocks the event loop: graph loading and every per-term search
+        run in worker threads, and the LLM call is awaited. On folio-python
+        releases without ``search_expanded`` this falls back to label search.
+        """
+        folio = await anyio.to_thread.run_sync(lambda: self.folio)
+        if not hasattr(folio, "search_expanded"):
+            results = await anyio.to_thread.run_sync(
+                functools.partial(folio.search_by_label, query, limit=limit)
+            )
+            return json.dumps({
+                "query": query,
+                "expansions": [],
+                "expansion_source": "none",
+                "results": [
+                    {**item, "matched_via": [query]}
+                    for item in json.loads(format_search_results(results))
+                ],
+            }, indent=2)
+        result = await folio.search_expanded(
+            query, limit=limit, include_definitions=include_definitions
+        )
+        return format_expanded_results(result)
+
