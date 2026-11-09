@@ -18,6 +18,8 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 # packages
+import anyio
+import anyio.to_thread
 from mcp.server.fastmcp import Context, FastMCP
 
 # project imports
@@ -30,7 +32,17 @@ _config = {
     "local": False,
     "api_url": "https://folio.openlegalstandard.org",
 }
+# Backend set by an embedding host via set_shared_folio() (e.g. folio-api).
+# The host owns it: session lifespans use it but never clear or close it.
 _shared_backend: Optional[FOLIOBackend] = None
+
+# Backend this module creates itself when nothing was injected. Under
+# streamable HTTP, FastMCP enters app_lifespan once per *session*, so it is
+# created by the first live session, shared by all of them, and closed only
+# when the last one ends.
+_owned_backend: Optional[FOLIOBackend] = None
+_owned_refs = 0
+_owned_lock = anyio.Lock()
 
 
 def set_shared_folio(folio_instance) -> None:
@@ -44,33 +56,53 @@ def set_shared_folio(folio_instance) -> None:
     _shared_backend = LocalBackend(folio_instance)
 
 
-@asynccontextmanager
-async def app_lifespan(server):
-    """Initialize the backend at server startup."""
-    global _shared_backend
-
-    if _shared_backend is not None:
-        backend = _shared_backend
-    elif _config["local"] or os.environ.get("FOLIO_MCP_LOCAL", "").strip() in ("1", "true", "yes"):
+def _create_backend() -> FOLIOBackend:
+    if _config["local"] or os.environ.get("FOLIO_MCP_LOCAL", "").strip() in ("1", "true", "yes"):
         from folio_mcp.backends.local import LocalBackend
         backend = LocalBackend()
         # Eagerly load the graph
         _ = backend.folio
-    else:
-        from folio_mcp.backends.api import APIBackend
-        backend = APIBackend(base_url=_config["api_url"])
+        return backend
+    from folio_mcp.backends.api import APIBackend
+    return APIBackend(base_url=_config["api_url"])
 
-    # Also store as _shared_backend so static resources (no ctx) can access it.
-    # FastMCP treats resource handlers with any parameter (including ctx) as templates,
-    # so static resources like folio://branches must be zero-arg functions.
-    _shared_backend = backend
 
+def _current_backend() -> FOLIOBackend:
+    """Backend for handlers without a request context (static resources).
+
+    FastMCP treats resource handlers with any parameter (including ctx) as
+    templates, so static resources like folio://branches must be zero-arg.
+    """
+    backend = _shared_backend or _owned_backend
+    if backend is None:
+        raise RuntimeError("FOLIO backend is not initialized (no active MCP session)")
+    return backend
+
+
+@asynccontextmanager
+async def app_lifespan(server):
+    """Provide the backend to one MCP session (entered once per session)."""
+    global _owned_backend, _owned_refs
+
+    if _shared_backend is not None:
+        yield {"backend": _shared_backend}
+        return
+
+    async with _owned_lock:
+        if _owned_backend is None:
+            # Local mode loads the ontology (~10s); keep the event loop free.
+            _owned_backend = await anyio.to_thread.run_sync(_create_backend)
+        _owned_refs += 1
+        backend = _owned_backend
     try:
         yield {"backend": backend}
     finally:
-        _shared_backend = None
-        if hasattr(backend, "close"):
-            await backend.close()
+        async with _owned_lock:
+            _owned_refs -= 1
+            if _owned_refs == 0 and _owned_backend is backend:
+                _owned_backend = None
+                if hasattr(backend, "close"):
+                    await backend.close()
 
 
 # Create the MCP server
@@ -391,13 +423,13 @@ async def query_properties(
 @mcp.resource("folio://branches")
 async def branches_resource() -> str:
     """FOLIO taxonomy branch names with concept counts."""
-    return await _shared_backend.get_branches_resource()
+    return await _current_backend().get_branches_resource()
 
 
 @mcp.resource("folio://stats")
 async def stats_resource() -> str:
     """FOLIO ontology statistics."""
-    return await _shared_backend.get_stats_resource()
+    return await _current_backend().get_stats_resource()
 
 
 @mcp.resource(
@@ -407,7 +439,7 @@ async def stats_resource() -> str:
 )
 async def branch_resource(branch_name: str) -> str:
     """Get top-level concepts for a specific FOLIO taxonomy branch."""
-    return await _shared_backend.get_taxonomy_branch(branch_name, max_depth=1)
+    return await _current_backend().get_taxonomy_branch(branch_name, max_depth=1)
 
 
 # ── Prompts ────────────────────────────────────────────────────────────

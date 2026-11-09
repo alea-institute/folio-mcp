@@ -6,10 +6,13 @@ Used when running with --local flag or when a shared FOLIO instance is provided
 """
 
 # imports
+import functools
 import json
-from typing import List, Optional, Tuple
+import threading
+from typing import Any, Awaitable, Callable, List, Optional, Tuple, TypeVar
 
 # packages
+import anyio.to_thread
 from folio import FOLIO, OWLClass, OWLObjectProperty
 
 # project
@@ -150,31 +153,57 @@ def format_search_results(results: List[Tuple[OWLClass, int | float]]) -> str:
     return json.dumps(formatted, indent=2)
 
 
+_T = TypeVar("_T")
+
+
+def _in_thread(fn: Callable[..., _T]) -> Callable[..., Awaitable[_T]]:
+    """Run a synchronous backend method in a worker thread and await it.
+
+    folio-python's searches and traversals are synchronous and CPU-bound. When
+    this server is mounted inside folio-api (one uvicorn worker), running them
+    directly in an ``async def`` blocks the event loop, so every other MCP
+    session, REST request, health check and SSE stream waits for them.
+    """
+
+    @functools.wraps(fn)
+    async def wrapper(*args: Any, **kwargs: Any) -> _T:
+        return await anyio.to_thread.run_sync(functools.partial(fn, *args, **kwargs))
+
+    return wrapper
+
+
 class LocalBackend:
     """Backend that uses a local folio-python FOLIO graph instance."""
 
     def __init__(self, folio: Optional[FOLIO] = None):
         self._folio = folio
+        self._load_lock = threading.Lock()
 
     @property
     def folio(self) -> FOLIO:
+        # Methods now run in worker threads; load the graph only once.
         if self._folio is None:
-            self._folio = FOLIO()
+            with self._load_lock:
+                if self._folio is None:
+                    self._folio = FOLIO()
         return self._folio
 
     @folio.setter
     def folio(self, value: FOLIO) -> None:
         self._folio = value
 
-    async def search_by_label(self, query: str, limit: int) -> str:
+    @_in_thread
+    def search_by_label(self, query: str, limit: int) -> str:
         results = self.folio.search_by_label(query, limit=limit)
         return format_search_results(results)
 
-    async def search_by_definition(self, query: str, limit: int) -> str:
+    @_in_thread
+    def search_by_definition(self, query: str, limit: int) -> str:
         results = self.folio.search_by_definition(query, limit=limit)
         return format_search_results(results)
 
-    async def get_concept(self, iri: str) -> str:
+    @_in_thread
+    def get_concept(self, iri: str) -> str:
         entity, entity_type = resolve_iri(self.folio, iri)
         if entity is None:
             return json.dumps({"error": f"Concept not found: {iri}"})
@@ -182,7 +211,8 @@ class LocalBackend:
             return entity.to_json()
         return json.dumps(owl_property_to_dict(entity))
 
-    async def export_concept(self, iri: str, fmt: str) -> str:
+    @_in_thread
+    def export_concept(self, iri: str, fmt: str) -> str:
         entity, entity_type = resolve_iri(self.folio, iri)
         if entity is None:
             return json.dumps({"error": f"Concept not found: {iri}"})
@@ -199,7 +229,8 @@ class LocalBackend:
         else:
             return json.dumps({"error": f"Unsupported format: {fmt}. Use 'markdown', 'jsonld', or 'owl_xml'."})
 
-    async def list_branches(self) -> str:
+    @_in_thread
+    def list_branches(self) -> str:
         result = {}
         for branch_name, method_name in BRANCH_METHODS.items():
             method = getattr(self.folio, method_name)
@@ -207,7 +238,8 @@ class LocalBackend:
             result[branch_name] = len(concepts)
         return json.dumps(result, indent=2)
 
-    async def get_taxonomy_branch(self, branch_name: str, max_depth: int) -> str:
+    @_in_thread
+    def get_taxonomy_branch(self, branch_name: str, max_depth: int) -> str:
         if branch_name not in BRANCH_METHODS:
             return json.dumps({
                 "error": f"Unknown branch: {branch_name}",
@@ -218,7 +250,8 @@ class LocalBackend:
         concepts = method(max_depth=max_depth)
         return json.dumps([owl_class_to_summary(c) for c in concepts], indent=2)
 
-    async def get_children(self, iri: str, max_depth: int) -> str:
+    @_in_thread
+    def get_children(self, iri: str, max_depth: int) -> str:
         entity, entity_type = resolve_iri(self.folio, iri)
         if entity is None:
             return json.dumps({"error": f"Concept not found: {iri}"})
@@ -226,7 +259,8 @@ class LocalBackend:
         children = self.folio.get_children(entity.iri, max_depth=max_depth)
         return json.dumps([owl_class_to_summary(c) for c in children], indent=2)
 
-    async def get_parents(self, iri: str, max_depth: int) -> str:
+    @_in_thread
+    def get_parents(self, iri: str, max_depth: int) -> str:
         entity, entity_type = resolve_iri(self.folio, iri)
         if entity is None:
             return json.dumps({"error": f"Concept not found: {iri}"})
@@ -234,11 +268,13 @@ class LocalBackend:
         parents = self.folio.get_parents(entity.iri, max_depth=max_depth)
         return json.dumps([owl_class_to_summary(c) for c in parents], indent=2)
 
-    async def get_properties(self) -> str:
+    @_in_thread
+    def get_properties(self) -> str:
         props = self.folio.get_all_properties()
         return json.dumps([owl_property_to_dict(p) for p in props], indent=2)
 
-    async def find_connections(
+    @_in_thread
+    def find_connections(
         self,
         subject_iri: str,
         property_name: Optional[str],
@@ -263,7 +299,8 @@ class LocalBackend:
             })
         return json.dumps(result, indent=2)
 
-    async def query_concepts(
+    @_in_thread
+    def query_concepts(
         self,
         label: Optional[str],
         definition: Optional[str],
@@ -294,7 +331,8 @@ class LocalBackend:
         )
         return json.dumps([owl_class_to_summary(c) for c in results], indent=2)
 
-    async def query_properties(
+    @_in_thread
+    def query_properties(
         self,
         label: Optional[str],
         definition: Optional[str],
@@ -318,7 +356,8 @@ class LocalBackend:
     async def get_branches_resource(self) -> str:
         return await self.list_branches()
 
-    async def get_stats_resource(self) -> str:
+    @_in_thread
+    def get_stats_resource(self) -> str:
         folio = self.folio
         return json.dumps({
             "version": getattr(folio, "version", None),
