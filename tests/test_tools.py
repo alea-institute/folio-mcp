@@ -351,8 +351,11 @@ class TestLocalBackend:
         parsed = json.loads(result)
         assert isinstance(parsed, list)
         assert len(parsed) > 0
-        # All results should have children
-        assert all("child_iris" in r for r in parsed)
+        # query_concepts returns compact summaries (iri/label/definition) since
+        # 5d9e048, so check the filter against the graph, not a child_iris key.
+        for r in parsed:
+            cls = local_backend.folio[r["iri"]]
+            assert cls is not None and cls.parent_class_of, r["label"]
 
     async def test_query_no_results(self, local_backend: LocalBackend):
         result = await local_backend.query_concepts(

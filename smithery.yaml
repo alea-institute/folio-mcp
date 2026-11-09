@@ -1,5 +1,5 @@
 name: folio-mcp
-version: 0.4.2
+version: 0.4.3
 description: >
   MCP server for FOLIO, the Federated Open Legal Information Ontology.
   Search, browse, and export 18,000+ legal concepts.

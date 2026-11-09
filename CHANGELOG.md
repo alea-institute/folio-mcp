@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.3 (2026-11-09)
+
+### Fixed
+
+- **Embedded server lost its shared graph after the first session.** Under streamable HTTP, FastMCP enters the server lifespan once per *session*. The lifespan cleared the backend that `set_shared_folio()` injected whenever any session ended, so every later session in folio-api fell back to an `APIBackend` that called the public REST API (the server calling itself, through its own rate limiter, which answered 429 under load). An injected backend is now never cleared or closed by a session.
+- **One session closed the backend other sessions were using.** A backend the server creates itself is now shared by all live sessions, reference-counted, and closed only when the last session ends. Before, overlapping sessions failed with `Cannot send a request, as the client has been closed.`
+- **Local-backend calls blocked the event loop.** folio-python's searches and traversals are synchronous, so each call stalled every other session, request and SSE stream on the same worker. They now run in worker threads, and the local-mode ontology load at first session does too.
+- `test_query_has_children_filter` had been failing since browse responses went compact; it now checks the filter against the graph.
+
 ## 0.4.2 (2026-11-08)
 
 ### Fixed
