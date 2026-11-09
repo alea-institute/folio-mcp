@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.4.4 (2026-11-09)
+
+First PyPI release since 0.4.1. It also includes 0.4.2 and 0.4.3 below, which were never published. `uvx folio-mcp` works again with current `mcp` releases.
+
+### Added
+
+- `search_expanded(query)`: an LLM expands a plain-English legal situation into related terms, searches each one, and fuses the ranked results. Served by the hosted endpoint and by local mode with an LLM configured. Falls back to plain search.
 
 ### Fixed
 
