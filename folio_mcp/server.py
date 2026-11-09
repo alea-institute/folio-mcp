@@ -24,8 +24,24 @@ from mcp.server.fastmcp import Context, FastMCP
 
 # project imports
 from folio_mcp import __version__
-from folio_mcp.backends._branch_data import BRANCH_METHODS, BRANCH_NAMES
+from folio_mcp.backends._branch_data import BRANCH_API_PATHS, resolve_branch_name
 from folio_mcp.backends.protocol import FOLIOBackend
+from folio_mcp.shaping import (
+    DEFAULT_SEARCH_LIMIT,
+    MAX_DEPTH,
+    MAX_QUERY_LIMIT,
+    MAX_SEARCH_LIMIT,
+    OWL_THING,
+    clamp,
+    error,
+    resolve_iri_argument,
+    shape_concept,
+    shape_error_passthrough,
+    shape_list,
+    unknown_branch,
+    validate_match_mode,
+    validate_query,
+)
 
 # Module-level config and backend
 _config = {
@@ -113,17 +129,22 @@ mcp = FastMCP(
         "Search, browse, and export 18,000+ legal concepts covering areas of law, "
         "document types, legal entities, and more.\n\n"
         "Workflow:\n"
-        "1. search_concepts(query) — find concepts by name\n"
-        "2. get_taxonomy_branch(branch_name) — browse a branch by name "
-        "(e.g., 'areas_of_law', 'document_artifacts')\n"
-        "3. get_concept(iri) — full details for a specific concept "
-        "(translations, identifiers, cross-references)\n"
-        "4. get_children(iri) / get_parents(iri) — navigate the taxonomy\n\n"
+        "1. search_concepts(query) — START HERE: find concepts by name or synonym. "
+        "Use short legal terms ('noncompete agreement', 'motion to dismiss'), not sentences; "
+        "for a paragraph of facts, search its key terms one at a time.\n"
+        "2. get_concept(iri) — full record for one concept "
+        "(definition, synonyms, translations, parents/children, identifiers).\n"
+        "3. list_branches() / get_taxonomy_branch(branch_name) — browse a branch by name "
+        "(e.g., 'areas_of_law', 'document_artifacts').\n"
+        "4. get_children(iri) / get_parents(iri) — navigate the hierarchy one level at a time.\n"
+        "5. query_concepts(...) — exact filters (label/definition substring, branch, parent).\n"
+        "search_definitions is a loose fallback; verify its hits by reading the definitions.\n\n"
         "IRIs look like 'https://folio.openlegalstandard.org/R07tQM...' or short IDs like 'R07tQM...'. "
-        "Branch names like 'areas_of_law' are NOT IRIs — use get_taxonomy_branch for those.\n\n"
-        "Browse operations return compact summaries {iri, label, definition}. "
-        "Use get_concept(iri) for the full record.\n\n"
-        "Keep max_depth=1. Navigate incrementally with get_children instead of deep traversal.\n\n"
+        "Never invent IRIs; get them from search results. Branch names like 'areas_of_law' "
+        "are accepted wherever an IRI is (they mean the branch's root concept).\n\n"
+        "List results are compact {iri, label, definition} with long definitions shortened; "
+        "use get_concept(iri) for the full record. Errors come back as {error, hint}.\n\n"
+        "When citing a concept, give its label and IRI.\n\n"
         "Classification workflows (available as slash commands):\n"
         "- /folio:classify-document — classify a legal document against the document_artifacts taxonomy\n"
         "- /folio:identify-area-of-law — identify areas of law for a legal situation\n"
@@ -149,148 +170,198 @@ def _get_backend(ctx: Context) -> FOLIOBackend:
 
 # ── Tools ──────────────────────────────────────────────────────────────
 
-
-@mcp.tool()
-async def search_concepts(ctx: Context, query: str, limit: int = 10) -> str:
-    """Search FOLIO concepts by label (name).
-
-    Finds legal concepts whose names match the query using fuzzy matching.
-    Use this as the primary entry point for finding concepts.
-
-    Args:
-        query: Search term (e.g., "bankruptcy", "software license", "trust").
-        limit: Maximum number of results to return (default 10).
-
-    Returns:
-        JSON array of matching concepts with iri, label, definition, and score.
-    """
-    return await _get_backend(ctx).search_by_label(query, limit)
+_BROWSE_TRUNCATED_HINT = (
+    "Result capped. Use max_depth=1 and drill down with get_children(iri) on the "
+    "relevant concept, or query_concepts(parent_iri=..., label=...) to filter."
+)
 
 
 @mcp.tool()
-async def search_definitions(ctx: Context, query: str, limit: int = 10) -> str:
-    """Search FOLIO concepts by definition text.
+async def search_concepts(ctx: Context, query: str, limit: int = DEFAULT_SEARCH_LIMIT) -> str:
+    """Find FOLIO concepts by name. START HERE for almost every question.
 
-    Finds legal concepts whose definitions match the query. Use this when
-    searching by name doesn't find what you need.
+    Fuzzy-matches the query against concept labels and synonyms (alternative
+    labels, abbreviations, translations of names). Works best with a short
+    legal term or noun phrase, not a sentence: "noncompete agreement",
+    "motion to dismiss", "landlord tenant", "LLC", "breach of contract".
+    For a paragraph of facts, pick out the key legal terms and search each one.
 
     Args:
-        query: Search term to match against definitions.
-        limit: Maximum number of results to return (default 10).
+        query: A short concept name (2-6 words).
+        limit: Maximum results (default 10, max 50).
 
     Returns:
-        JSON array of matching concepts with iri, label, definition, and score.
+        JSON array of {iri, label, definition, score}; score is 0-100, higher is
+        better. Pass an iri to get_concept for the full record.
     """
-    return await _get_backend(ctx).search_by_definition(query, limit)
+    invalid = validate_query(query, "search_concepts")
+    if invalid:
+        return invalid
+    limit = clamp(limit, 1, MAX_SEARCH_LIMIT, DEFAULT_SEARCH_LIMIT)
+    raw = await _get_backend(ctx).search_by_label(query.strip(), limit)
+    return shape_list(raw, limit=limit)
+
+
+@mcp.tool()
+async def search_definitions(ctx: Context, query: str, limit: int = DEFAULT_SEARCH_LIMIT) -> str:
+    """Fuzzy search over concept DEFINITIONS. Fallback only — use search_concepts first.
+
+    Ranking is loose: results often share only a few common words with the
+    query, so read each definition before relying on a hit. For an exact word
+    or phrase inside definitions, query_concepts(definition="...") is more
+    precise.
+
+    Args:
+        query: A short descriptive phrase (e.g. "duty of loyalty to beneficiaries").
+        limit: Maximum results (default 10, max 50).
+
+    Returns:
+        JSON array of {iri, label, definition, score}.
+    """
+    invalid = validate_query(query, "search_definitions")
+    if invalid:
+        return invalid
+    limit = clamp(limit, 1, MAX_SEARCH_LIMIT, DEFAULT_SEARCH_LIMIT)
+    raw = await _get_backend(ctx).search_by_definition(query.strip(), limit)
+    return shape_list(raw, limit=limit)
 
 
 @mcp.tool()
 async def get_concept(ctx: Context, iri: str) -> str:
-    """Get full details for a specific FOLIO concept by IRI.
-
-    Accepts short IDs (e.g., "RSYBzf149Mi5KE0YtmpUmr"), full IRIs
-    (e.g., "https://folio.openlegalstandard.org/RSYBzf149Mi5KE0YtmpUmr"),
-    or partial matches.
+    """Get the full record for one FOLIO concept: definition, synonyms,
+    translations, examples, parent/child IRIs, identifiers and cross-references.
 
     Args:
-        iri: The concept IRI or identifier.
+        iri: A full IRI ("https://folio.openlegalstandard.org/RSYBzf149Mi5KE0YtmpUmr"),
+            a short ID ("RSYBzf149Mi5KE0YtmpUmr"), or a branch name such as
+            "areas_of_law" (returns that branch's root concept). Not a free-text
+            name — use search_concepts to find the IRI first.
 
     Returns:
-        Full JSON representation of the concept, or an error message.
+        JSON object with all non-empty fields, or {error, hint}.
     """
-    return await _get_backend(ctx).get_concept(iri)
+    resolved, invalid = resolve_iri_argument(iri)
+    if invalid:
+        return invalid
+    return shape_concept(await _get_backend(ctx).get_concept(resolved), iri)
 
 
 @mcp.tool()
 async def export_concept(ctx: Context, iri: str, format: str = "markdown") -> str:
-    """Export a FOLIO concept in a specific format.
+    """Export one FOLIO concept as Markdown, JSON-LD or OWL/XML (for documents or
+    other systems). For reading a concept yourself, get_concept is more compact.
 
     Args:
-        iri: The concept IRI or identifier.
-        format: Output format — "markdown", "jsonld", or "owl_xml".
+        iri: The concept IRI or short ID.
+        format: "markdown" (default), "jsonld", or "owl_xml".
 
     Returns:
-        The concept in the requested format, or an error message.
+        The concept in the requested format, or {error, hint}.
     """
-    return await _get_backend(ctx).export_concept(iri, format)
+    resolved, invalid = resolve_iri_argument(iri)
+    if invalid:
+        return invalid
+    return shape_error_passthrough(await _get_backend(ctx).export_concept(resolved, format), iri)
 
 
 @mcp.tool()
 async def list_branches(ctx: Context) -> str:
-    """List all FOLIO taxonomy branches with concept counts.
-
-    Returns the 24 top-level categories of the FOLIO ontology
-    (e.g., areas_of_law, document_artifacts, legal_entities).
+    """List the 24 top-level FOLIO taxonomy branches with their number of
+    top-level concepts (e.g. areas_of_law, document_artifacts, legal_entities,
+    actors_players, industries, locations).
 
     Returns:
-        JSON object mapping branch names to concept counts.
+        JSON object mapping branch name to top-level concept count.
     """
-    return await _get_backend(ctx).list_branches()
+    return shape_list(await _get_backend(ctx).list_branches())
 
 
 @mcp.tool()
 async def get_taxonomy_branch(ctx: Context, branch_name: str, max_depth: int = 1) -> str:
-    """Get concepts in a FOLIO taxonomy branch. Returns compact summaries.
+    """Browse the top-level concepts of a FOLIO taxonomy branch.
 
     Args:
-        branch_name: Branch name (e.g., "areas_of_law", "document_artifacts").
-            Use list_branches() to see all available branch names.
-        max_depth: Depth limit. Use 1 (default) for top-level only.
-            WARNING: depth >2 can return very large results.
-            Navigate incrementally with get_children() instead.
+        branch_name: A branch name from list_branches(), e.g. "areas_of_law",
+            "document_artifacts", "actors_players". Close variants such as
+            "Areas of Law" or "AREA_OF_LAW" are accepted.
+        max_depth: 1 (default) = top level only. Up to 3, but deeper levels can be
+            large; prefer get_children(iri) on the relevant concept.
 
     Returns:
-        JSON array of {iri, label, definition} summaries.
-        Use get_concept(iri) for full details on a specific concept.
+        JSON array of {iri, label, definition} (definitions shortened; use
+        get_concept for full text). Large results are capped at 100 items and
+        returned as {results, truncated, total, note}.
     """
-    return await _get_backend(ctx).get_taxonomy_branch(branch_name, min(max_depth, 3))
+    canonical = resolve_branch_name(branch_name)
+    if canonical is None:
+        return unknown_branch(branch_name)
+    max_depth = clamp(max_depth, 1, MAX_DEPTH, 1)
+    raw = await _get_backend(ctx).get_taxonomy_branch(canonical, max_depth)
+    return shape_list(raw, truncated_hint=_BROWSE_TRUNCATED_HINT)
 
 
 @mcp.tool()
 async def get_children(ctx: Context, iri: str, max_depth: int = 1) -> str:
-    """Get child concepts of a FOLIO concept. Returns compact summaries.
+    """Get the narrower (child) concepts of a FOLIO concept.
 
     Args:
-        iri: A concept IRI (e.g., "https://folio.openlegalstandard.org/R07tQM...")
-            or short ID (e.g., "R07tQM..."). NOT a branch name — use
-            get_taxonomy_branch for branch names like "areas_of_law".
-        max_depth: Depth limit (default 1 for direct children).
-            Keep at 1-2 to avoid large results.
+        iri: A concept IRI or short ID. A branch name such as "areas_of_law" is
+            also accepted and returns that branch's top-level concepts.
+        max_depth: 1 (default) = direct children. Up to 3; prefer drilling down
+            one level at a time.
 
     Returns:
-        JSON array of {iri, label, definition} summaries.
-        Use get_concept(iri) for full details on a specific child.
+        JSON array of {iri, label, definition}; capped at 100 items as
+        {results, truncated, total, note}.
     """
-    return await _get_backend(ctx).get_children(iri, min(max_depth, 3))
+    resolved, invalid = resolve_iri_argument(iri)
+    if invalid:
+        return invalid
+    max_depth = clamp(max_depth, 1, MAX_DEPTH, 1)
+    raw = await _get_backend(ctx).get_children(resolved, max_depth)
+    return shape_list(raw, iri=iri, exclude_iris=(resolved,), truncated_hint=_BROWSE_TRUNCATED_HINT)
 
 
 @mcp.tool()
 async def get_parents(ctx: Context, iri: str, max_depth: int = 1) -> str:
-    """Get parent concepts of a FOLIO concept. Returns compact summaries.
+    """Get the broader (parent) concepts of a FOLIO concept. A concept can have
+    several parents (FOLIO is a polyhierarchy).
 
     Args:
-        iri: A concept IRI (e.g., "https://folio.openlegalstandard.org/R07tQM...")
-            or short ID. NOT a branch name.
-        max_depth: Depth limit (default 1 for direct parents).
+        iri: A concept IRI or short ID.
+        max_depth: 1 (default) = direct parents; up to 3 for grandparents etc.
 
     Returns:
-        JSON array of {iri, label, definition} summaries.
-        Use get_concept(iri) for full details on a specific parent.
+        JSON array of {iri, label, definition}. Empty for a branch root.
     """
-    return await _get_backend(ctx).get_parents(iri, max_depth)
+    resolved, invalid = resolve_iri_argument(iri)
+    if invalid:
+        return invalid
+    max_depth = clamp(max_depth, 1, MAX_DEPTH, 1)
+    raw = await _get_backend(ctx).get_parents(resolved, max_depth)
+    return shape_list(raw, iri=iri, exclude_iris=(resolved, OWL_THING), truncated_hint=_BROWSE_TRUNCATED_HINT)
 
 
 @mcp.tool()
 async def get_properties(ctx: Context) -> str:
-    """Get all OWL object properties defined in the FOLIO ontology.
+    """List all FOLIO object properties (relationship types such as
+    "folio:advised", "folio:drafted", "folio:isGovernedBy", "oasis:hasActor").
 
-    Returns properties that describe relationships between concepts
-    (e.g., "hasJurisdiction", "appliesTo", "governedBy").
+    Compact listing: iri, label and short definition only. For domain/range
+    details, or to filter, use query_properties.
 
     Returns:
-        JSON array of properties with iri, label, definition, domain, and range.
+        JSON array of {iri, label, definition}.
     """
-    return await _get_backend(ctx).get_properties()
+    raw = await _get_backend(ctx).get_properties()
+    data = json.loads(raw) if raw.lstrip().startswith("[") else None
+    if isinstance(data, list):
+        raw = json.dumps([
+            {k: p.get(k) for k in ("iri", "label", "definition")}
+            for p in data
+            if not str(p.get("label", "")).startswith("DEPRECATED")
+        ])
+    return shape_list(raw, max_items=1000, max_definition_chars=100)
 
 
 @mcp.tool()
@@ -300,20 +371,38 @@ async def find_connections(
     property_name: Optional[str] = None,
     object_iri: Optional[str] = None,
 ) -> str:
-    """Find semantic connections (triples) between FOLIO concepts.
+    """Find explicit property links (subject -> property -> object triples) from
+    a FOLIO concept, e.g. Actor / Player -folio:drafted-> Document / Artifact.
 
-    Searches for subject-property-object triples. At minimum, provide a
-    subject_iri. Optionally filter by property and/or object.
+    FOLIO records only a small number of these links (mostly on top-level
+    classes), so most concepts have none. For broader/narrower relationships use
+    get_parents/get_children; for related concepts see "see_also" in get_concept.
 
     Args:
-        subject_iri: IRI of the subject concept.
-        property_name: Optional property name or IRI to filter by.
+        subject_iri: IRI or short ID of the subject concept (branch names accepted).
+        property_name: Optional property label (e.g. "folio:drafted") or IRI.
         object_iri: Optional object concept IRI to filter by.
 
     Returns:
-        JSON array of triples [{subject: {...}, property: {...}, object: {...}}].
+        JSON array of {subject, property, object} (each {iri, label}), or
+        {results: [], note} when the concept has no recorded links.
     """
-    return await _get_backend(ctx).find_connections(subject_iri, property_name, object_iri)
+    resolved, invalid = resolve_iri_argument(subject_iri)
+    if invalid:
+        return invalid
+    if object_iri:
+        object_iri, invalid = resolve_iri_argument(object_iri)
+        if invalid:
+            return invalid
+    raw = await _get_backend(ctx).find_connections(resolved, property_name or None, object_iri or None)
+    return shape_list(
+        raw,
+        iri=subject_iri,
+        empty_note=(
+            "No explicit property links are recorded for this concept (common in FOLIO). "
+            "Use get_parents/get_children for the hierarchy, or get_concept for see_also."
+        ),
+    )
 
 
 @mcp.tool()
@@ -332,47 +421,70 @@ async def query_concepts(
     match_mode: str = "substring",
     limit: int = 20,
 ) -> str:
-    """Query FOLIO concepts with composable text and structural filters.
+    """Filter FOLIO concepts by exact field matches and structure (not ranked).
 
-    More powerful than search_concepts — supports field-specific matching,
-    structural constraints, and multiple match modes. All specified filters
-    must match (AND logic).
+    Use this for precise filters, e.g. every area of law whose label contains
+    "tax", or concepts whose definition mentions "fiduciary". For "find the
+    concept called X", search_concepts ranks better. All filters are ANDed;
+    give at least one.
 
     Text filters:
-        label: Match against the concept's primary label (rdfs:label).
-        definition: Match against the concept's definition (skos:definition).
-        alt_label: Match against alternative labels (skos:altLabel).
-        example: Match against examples (skos:example).
-        any_text: Match against ALL text fields (label, definition, alt_labels, examples, notes, comment).
+        label: Match the primary label.
+        definition: Match the definition text.
+        alt_label: Match alternative labels / synonyms.
+        example: Match examples.
+        any_text: Match any text field (label, definition, synonyms, examples, notes).
 
     Structural filters:
-        branch: Limit to a taxonomy branch (e.g., "AREA_OF_LAW", "CURRENCY", "LEGAL_ENTITY").
-        parent_iri: Only descendants of this IRI (transitive subClassOf).
+        branch: Branch name from list_branches(), e.g. "areas_of_law" (also
+            accepts "AREA_OF_LAW").
+        parent_iri: Only descendants of this concept (IRI, short ID or branch name).
         has_children: True = non-leaf concepts only, False = leaf concepts only.
         deprecated: Include deprecated concepts (default False).
-        country: Match against the country field.
+        country: Match the country field.
 
     Control:
-        match_mode: "substring" (default), "exact", "regex", or "fuzzy".
-        limit: Maximum results (default 20).
+        match_mode: "substring" (default, case-insensitive), "exact", "regex", or "fuzzy".
+        limit: Maximum results (default 20, max 100).
 
     Returns:
-        JSON array of matching concepts.
+        JSON array of {iri, label, definition}.
     """
-    return await _get_backend(ctx).query_concepts(
-        label=label,
-        definition=definition,
-        alt_label=alt_label,
-        example=example,
-        any_text=any_text,
-        branch=branch,
+    text_filters = (label, definition, alt_label, example, any_text, country)
+    if all(f is None or f == "" for f in text_filters) and not branch and not parent_iri:
+        return error(
+            "Give at least one filter (label, definition, any_text, branch, parent_iri, ...).",
+            hint="To find a concept by name, use search_concepts(query=...).",
+        )
+    invalid = validate_match_mode(match_mode, text_filters)
+    if invalid:
+        return invalid
+    folio_branch = None
+    if branch:
+        canonical = resolve_branch_name(branch)
+        if canonical is None:
+            return unknown_branch(branch)
+        folio_branch = BRANCH_API_PATHS[canonical].upper()
+    if parent_iri:
+        parent_iri, invalid = resolve_iri_argument(parent_iri)
+        if invalid:
+            return invalid
+    limit = clamp(limit, 1, MAX_QUERY_LIMIT, 20)
+    raw = await _get_backend(ctx).query_concepts(
+        label=label or None,
+        definition=definition or None,
+        alt_label=alt_label or None,
+        example=example or None,
+        any_text=any_text or None,
+        branch=folio_branch,
         parent_iri=parent_iri,
         has_children=has_children,
         deprecated=deprecated,
-        country=country,
+        country=country or None,
         match_mode=match_mode,
         limit=limit,
     )
+    return shape_list(raw, limit=limit, iri=parent_iri)
 
 
 @mcp.tool()
@@ -386,13 +498,11 @@ async def query_properties(
     match_mode: str = "substring",
     limit: int = 20,
 ) -> str:
-    """Query FOLIO object properties with composable text and structural filters.
-
-    Replaces get_properties() when you need filtered results instead of the full list.
+    """Filter FOLIO object properties (relationship types), with full domain/range detail.
 
     Text filters:
-        label: Match against property label (e.g., "jurisdiction", "applies").
-        definition: Match against property definition.
+        label: Match the property label, e.g. "advised", "drafted", "governed", "hasActor".
+        definition: Match the property definition.
 
     Structural filters:
         domain_iri: Only properties whose domain includes this class IRI.
@@ -401,20 +511,34 @@ async def query_properties(
 
     Control:
         match_mode: "substring" (default), "exact", "regex", or "fuzzy".
-        limit: Maximum results (default 20).
+        limit: Maximum results (default 20, max 100).
 
     Returns:
-        JSON array of matching properties with iri, label, definition, domain, range.
+        JSON array of {iri, label, definition, domain, range, inverse_of, sub_property_of}.
     """
-    return await _get_backend(ctx).query_properties(
-        label=label,
-        definition=definition,
-        domain_iri=domain_iri,
-        range_iri=range_iri,
+    invalid = validate_match_mode(match_mode, (label, definition))
+    if invalid:
+        return invalid
+    for name, value in (("domain_iri", domain_iri), ("range_iri", range_iri)):
+        if value:
+            resolved, invalid = resolve_iri_argument(value)
+            if invalid:
+                return invalid
+            if name == "domain_iri":
+                domain_iri = resolved
+            else:
+                range_iri = resolved
+    limit = clamp(limit, 1, MAX_QUERY_LIMIT, 20)
+    raw = await _get_backend(ctx).query_properties(
+        label=label or None,
+        definition=definition or None,
+        domain_iri=domain_iri or None,
+        range_iri=range_iri or None,
         has_inverse=has_inverse,
         match_mode=match_mode,
         limit=limit,
     )
+    return shape_list(raw, limit=limit)
 
 
 # ── Resources ──────────────────────────────────────────────────────────
@@ -423,7 +547,7 @@ async def query_properties(
 @mcp.resource("folio://branches")
 async def branches_resource() -> str:
     """FOLIO taxonomy branch names with concept counts."""
-    return await _current_backend().get_branches_resource()
+    return shape_list(await _current_backend().get_branches_resource())
 
 
 @mcp.resource("folio://stats")
@@ -439,7 +563,10 @@ async def stats_resource() -> str:
 )
 async def branch_resource(branch_name: str) -> str:
     """Get top-level concepts for a specific FOLIO taxonomy branch."""
-    return await _current_backend().get_taxonomy_branch(branch_name, max_depth=1)
+    canonical = resolve_branch_name(branch_name)
+    if canonical is None:
+        return unknown_branch(branch_name)
+    return shape_list(await _current_backend().get_taxonomy_branch(canonical, max_depth=1))
 
 
 # ── Prompts ────────────────────────────────────────────────────────────
@@ -462,7 +589,7 @@ def classify_document(description: str) -> list:
             f"Steps:\n"
             f"1. Use search_concepts to find matching document types\n"
             f"2. If no good match, browse the document_artifacts branch with "
-            f"get_taxonomy_branch to see the 8 top-level document categories\n"
+            f"get_taxonomy_branch to see the top-level document categories\n"
             f"3. Use get_children on the best category to find the specific type\n"
             f"4. Use get_concept on the best match to get full details\n\n"
             f"Return the classification as:\n"

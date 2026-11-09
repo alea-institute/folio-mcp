@@ -27,6 +27,10 @@ def resolve_iri(folio: FOLIO, iri: str) -> Tuple[Optional[OWLClass | OWLObjectPr
     Strategy 3: Prepend FOLIO prefix
     Strategy 4: Suffix scan
     """
+    iri = (iri or "").strip()
+    if not iri:
+        return None, None
+
     # Strategy 1: Direct lookup
     owl_class = folio[iri]
     if owl_class:
@@ -58,12 +62,14 @@ def resolve_iri(folio: FOLIO, iri: str) -> Tuple[Optional[OWLClass | OWLObjectPr
         if prop:
             return prop, "property"
 
-    # Strategy 4: Scan all for suffix match
+    # Strategy 4: Scan all for a match on a path boundary (a bare substring
+    # like "" or "A" must not match an arbitrary concept)
+    suffix = "/" + iri.lstrip("/")
     for cls in folio.classes:
-        if hasattr(cls, "iri") and (cls.iri.endswith(iri) or iri.endswith(cls.iri)):
+        if cls.iri and (cls.iri.endswith(suffix) or iri.endswith(cls.iri)):
             return cls, "class"
     for p in folio.object_properties:
-        if p.iri.endswith(iri) or iri.endswith(p.iri):
+        if p.iri and (p.iri.endswith(suffix) or iri.endswith(p.iri)):
             return p, "property"
 
     return None, None
