@@ -73,6 +73,11 @@ def looks_like_iri(text: str) -> bool:
     return text.startswith(("http://", "https://")) or bool(_SHORT_ID_RE.match(text) and not text.islower())
 
 
+def _iri_id(iri: str) -> str:
+    """The identifying part of an IRI: its last path or fragment segment."""
+    return iri.rstrip("/").rsplit("/", 1)[-1].rsplit("#", 1)[-1]
+
+
 def resolve_iri_argument(iri: Any) -> Tuple[Optional[str], Optional[str]]:
     """Validate an IRI argument. Returns (iri, None) or (None, error_json).
 
@@ -171,14 +176,17 @@ def shape_list(
     if not isinstance(data, list):
         return dumps(data)
 
-    excluded = set(exclude_iris)
+    # Compare by ID (last path segment): callers may pass a short ID such as
+    # "RCIPwpgRpMs1eVz4vPid0pV" while results carry the full IRI.
+    excluded = {_iri_id(x) for x in exclude_iris if x}
     items, seen = [], set()
     for item in data:
         item_iri = item.get("iri") if isinstance(item, dict) else None
         if item_iri is not None:
-            if item_iri in excluded or item_iri in seen:
+            item_id = _iri_id(item_iri)
+            if item_id in excluded or item_id in seen:
                 continue
-            seen.add(item_iri)
+            seen.add(item_id)
         items.append(_clean_item(item, max_definition_chars))
 
     if limit is not None:
