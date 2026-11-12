@@ -26,6 +26,7 @@ from mcp.server.fastmcp import Context, FastMCP
 from folio_mcp import __version__
 from folio_mcp.backends._branch_data import BRANCH_API_PATHS, resolve_branch_name
 from folio_mcp.backends.protocol import FOLIOBackend
+from folio_mcp.observer import ObservableFastMCP, set_tool_observer  # noqa: F401 (re-exported)
 from folio_mcp.shaping import (
     DEFAULT_SEARCH_LIMIT,
     MAX_DEPTH,
@@ -126,7 +127,7 @@ async def app_lifespan(server):
 
 
 # Create the MCP server
-mcp = FastMCP(
+mcp = ObservableFastMCP(
     "FOLIO Legal Ontology",
     instructions=(
         "Access FOLIO, the Federated Open Legal Information Ontology. "

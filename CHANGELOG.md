@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `folio_mcp.observer.set_tool_observer(callback)`: an optional hook that hosts can use for usage telemetry. The server class is now `ObservableFastMCP`, whose `call_tool` passes each call's tool name, arguments, result text, duration, error and MCP client name to the registered callback. **It is off by default**, and folio-mcp stores nothing itself. Observer exceptions are logged and never affect the call.
+
 ## 0.4.5 (2026-11-09)
 
 ### Added
